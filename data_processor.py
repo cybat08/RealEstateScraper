@@ -584,16 +584,38 @@ def calculate_roi_metrics(property_data, rental_yield_percent=None, appreciation
     
     # Determine investment recommendation
     recommendation = ""
-    if five_year_roi > 50:
+    if total_roi > 50:
         recommendation = "Excellent investment opportunity with strong returns"
-    elif five_year_roi > 30:
+    elif total_roi > 30:
         recommendation = "Good investment with solid potential returns"
-    elif five_year_roi > 15:
+    elif total_roi > 15:
         recommendation = "Average investment opportunity"
-    elif five_year_roi > 0:
+    elif total_roi > 0:
         recommendation = "Below average returns, consider negotiating price"
     else:
         recommendation = "Not recommended as an investment property"
+    
+    # Calculate additional metrics for display
+    # Mortgage payment is calculated above
+    monthly_expenses_for_display = monthly_expenses
+    
+    # Cap rate (annual net income / property value)
+    cap_rate = (annual_rental_income - (monthly_expenses * 12)) / price * 100
+    
+    # Cash on cash return (annual cash flow / total cash invested)
+    cash_on_cash_return = (annual_cash_flow / down_payment) * 100
+    
+    # Equity in 5 years (assuming linear equity growth from mortgage payments)
+    # This is a simplification - actual equity growth depends on amortization schedule
+    if loan_amount > 0:
+        # Estimate principal portion of mortgage payment (increases over time, but simplified here)
+        avg_principal_payment = loan_amount / (loan_term_months)
+        equity_5yr = down_payment + (avg_principal_payment * min(60, loan_term_months)) + total_appreciation
+    else:
+        equity_5yr = price + total_appreciation
+    
+    # Calculate annualized ROI
+    annualized_roi = ((1 + (total_roi / 100)) ** (1 / investment_horizon_years) - 1) * 100
     
     # Return metrics dictionary
     return {
@@ -601,9 +623,17 @@ def calculate_roi_metrics(property_data, rental_yield_percent=None, appreciation
         'annual_rental_income': annual_rental_income,
         'monthly_cash_flow': monthly_cash_flow,
         'appreciation_rate': appreciation,
-        'five_year_value': five_year_value,
-        'roi_5yr': five_year_roi,
-        'investment_recommendation': recommendation
+        'future_value': future_value,
+        'roi': total_roi,
+        'total_roi_pct': total_roi,  # For compatibility with existing code
+        'investment_horizon': investment_horizon_years,
+        'investment_recommendation': recommendation,
+        'mortgage_payment': mortgage_payment,
+        'monthly_expenses': monthly_expenses_for_display,
+        'cap_rate': cap_rate,
+        'cash_on_cash_return': cash_on_cash_return,
+        'equity_5yr': equity_5yr,
+        'annualized_roi': annualized_roi
     }
 
 def estimate_rental_yield(property_data):
