@@ -86,7 +86,7 @@ st.sidebar.header("Scraper Controls")
 # Website selection
 websites = st.sidebar.multiselect(
     "Select websites to scrape",
-    ["Zillow", "Realtor.com", "Trulia"],
+    ["Zillow", "Realtor.com", "Trulia", "Redfin", "Homes.com"],
     default=["Zillow"]
 )
 
@@ -208,6 +208,12 @@ if scrape_button:
                     elif website == "Trulia":
                         new_listings = scrape_trulia(location, num_listings, **filter_params)
                         st.sidebar.write(f"Debug: Trulia listings count: {len(new_listings) if not isinstance(new_listings, Exception) else 'Error'}")
+                    elif website == "Redfin":
+                        new_listings = scrape_redfin(location, num_listings, **filter_params)
+                        st.sidebar.write(f"Debug: Redfin listings count: {len(new_listings) if not isinstance(new_listings, Exception) else 'Error'}")
+                    elif website == "Homes.com":
+                        new_listings = scrape_homes_com(location, num_listings, **filter_params)
+                        st.sidebar.write(f"Debug: Homes.com listings count: {len(new_listings) if not isinstance(new_listings, Exception) else 'Error'}")
                     
                     if isinstance(new_listings, pd.DataFrame) and not new_listings.empty:
                         # Add a source column

@@ -521,6 +521,42 @@ def scrape_realtor(location, max_listings=20, min_price=0, max_price=None, min_b
         print(f"Generating sample data for {location} as Realtor.com scraping failed.")
         return generate_sample_data(location, max_listings, source="Realtor (Sample)")
 
+def calculate_data_quality(row):
+    """
+    Calculate a data quality score for a property listing row
+    
+    Args:
+        row (pd.Series): Series containing property data
+        
+    Returns:
+        float: Data quality score as a percentage (0-100)
+    """
+    score = 0
+    total_points = 5  # Total number of quality checks
+    
+    # Check for price data
+    if pd.notna(row.get('price')) and row.get('price') > 0:
+        score += 1
+    
+    # Check for address data
+    if pd.notna(row.get('address')) and len(str(row.get('address'))) > 5:
+        score += 1
+    
+    # Check for bedrooms data
+    if pd.notna(row.get('bedrooms')):
+        score += 1
+    
+    # Check for bathrooms data
+    if pd.notna(row.get('bathrooms')):
+        score += 1
+    
+    # Check for square feet data
+    if pd.notna(row.get('square_feet')) and row.get('square_feet') > 0:
+        score += 1
+    
+    # Convert to percentage
+    return (score / total_points) * 100
+
 def generate_sample_data(location, num_listings=10, source="Sample"):
     """
     Generate sample property data for testing when real scraping fails
