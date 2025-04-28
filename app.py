@@ -565,35 +565,74 @@ with tab4:
         # Get the property dataframe
         properties_df = st.session_state.properties_df
         
+        # Add filter options
+        st.subheader("Filter Properties for Map")
+        
+        # Create columns for filters
+        filter_col1, filter_col2 = st.columns(2)
+        
+        with filter_col1:
+            # Price range filter
+            if not properties_df.empty:
+                min_price = int(properties_df['price'].min())
+                max_price = int(properties_df['price'].max())
+                price_range = st.slider(
+                    "Price Range ($)",
+                    min_price,
+                    max_price,
+                    (min_price, max_price),
+                    key="map_price_range"
+                )
+        
+        with filter_col2:
+            # Property type filter
+            prop_types = get_unique_values(properties_df, 'property_type')
+            selected_types = st.multiselect(
+                "Property Types",
+                prop_types,
+                default=prop_types,
+                key="map_property_types"
+            )
+        
+        # Apply filters
+        price_mask = (properties_df['price'] >= price_range[0]) & (properties_df['price'] <= price_range[1])
+        type_mask = properties_df['property_type'].isin(selected_types)
+        filtered_df = properties_df[price_mask & type_mask]
+        
         # Display map statistics
-        data_count = len(properties_df)
-        price_avg = properties_df['price'].mean()
-        price_min = properties_df['price'].min()
-        price_max = properties_df['price'].max()
+        data_count = len(filtered_df)
         
-        # Display summary metrics
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Properties", f"{data_count}")
-        with col2:
-            st.metric("Avg. Price", f"${price_avg:,.0f}")
-        with col3:
-            st.metric("Price Range", f"${price_min:,.0f} - ${price_max:,.0f}")
-        
-        # Show map
-        st.subheader("Property Locations")
-        display_property_map(properties_df)
-        
-        # Explanatory note
-        st.caption("Note: Property locations are approximated based on address geocoding. Click on markers to see property details.")
-        
-        # Offer option to recalculate coordinates
-        if st.button("Refresh Map Coordinates", key="refresh_map_coordinates_button"):
-            with st.spinner("Updating property coordinates..."):
-                # Force recalculate all coordinates
-                updated_df = geocode_properties(properties_df)
-                st.session_state.properties_df = updated_df
-                st.rerun()
+        if filtered_df.empty:
+            st.warning("No properties match your filters. Please adjust your criteria.")
+        else:
+            price_avg = filtered_df['price'].mean()
+            price_min = filtered_df['price'].min()
+            price_max = filtered_df['price'].max()
+            
+            # Display summary metrics
+            st.subheader("Map Statistics")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Properties", f"{data_count}")
+            with col2:
+                st.metric("Avg. Price", f"${price_avg:,.0f}")
+            with col3:
+                st.metric("Price Range", f"${price_min:,.0f} - ${price_max:,.0f}")
+            
+            # Show map
+            st.subheader("Property Locations")
+            display_property_map(filtered_df)
+            
+            # Explanatory note
+            st.caption("Note: Property locations are approximated based on address geocoding. Click on markers to see property details.")
+            
+            # Offer option to recalculate coordinates
+            if st.button("Refresh Map Coordinates", key="refresh_map_coordinates_button"):
+                with st.spinner("Updating property coordinates..."):
+                    # Force recalculate all coordinates
+                    updated_df = geocode_properties(properties_df)
+                    st.session_state.properties_df = updated_df
+                    st.rerun()
     else:
         # Show instructions if no properties available
         st.info("No properties available for mapping")

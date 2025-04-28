@@ -491,15 +491,16 @@ def geocode_properties(properties_df):
     
     return result_df
 
-def create_property_map(properties_df):
+def create_property_map(properties_df, view_type="markers"):
     """
     Create an interactive map showing property locations
     
     Args:
         properties_df (pd.DataFrame): DataFrame containing property listings with coordinates
+        view_type (str): Type of map visualization - 'markers', 'heatmap', or 'both'
         
     Returns:
-        folium.Map: Interactive map object with property markers
+        folium.Map: Interactive map object with property markers or heatmap
     """
     # Filter properties with valid coordinates
     valid_properties = properties_df.dropna(subset=['latitude', 'longitude'])
@@ -518,9 +519,6 @@ def create_property_map(properties_df):
         tiles='CartoDB positron',  # Use a lighter tile set for faster loading
         prefer_canvas=True         # Use canvas rendering for better performance
     )
-    
-    # Add a marker cluster to handle many properties
-    marker_cluster = MarkerCluster().add_to(property_map)
     
     # Define price color ranges
     def get_price_color(price):
@@ -541,29 +539,52 @@ def create_property_map(properties_df):
         # Only show top 50 properties by price for better performance
         properties_to_display = valid_properties.nlargest(50, 'price')
     
-    for idx, property_data in properties_to_display.iterrows():
-        # Create simplified popup content with property details
-        price = format_price(property_data['price'])
-        beds_baths = f"{property_data['bedrooms']:.0f}bd, {property_data['bathrooms']:.1f}ba" if pd.notna(property_data['bedrooms']) and pd.notna(property_data['bathrooms']) else "N/A"
+    # Add marker clusters if selected
+    if view_type in ["markers", "both"]:
+        # Add a marker cluster to handle many properties
+        marker_cluster = MarkerCluster().add_to(property_map)
         
-        popup_html = f"""
-        <div style="width: 180px;">
-            <h4 style="margin: 3px 0;">{price}</h4>
-            <p style="margin: 2px 0;"><b>{property_data['address']}</b></p>
-            <p style="margin: 2px 0;">{beds_baths}</p>
-        </div>
-        """
+        for idx, property_data in properties_to_display.iterrows():
+            # Create simplified popup content with property details
+            price = format_price(property_data['price'])
+            beds_baths = f"{property_data['bedrooms']:.0f}bd, {property_data['bathrooms']:.1f}ba" if pd.notna(property_data['bedrooms']) and pd.notna(property_data['bathrooms']) else "N/A"
+            
+            popup_html = f"""
+            <div style="width: 180px;">
+                <h4 style="margin: 3px 0;">{price}</h4>
+                <p style="margin: 2px 0;"><b>{property_data['address']}</b></p>
+                <p style="margin: 2px 0;">{beds_baths}</p>
+            </div>
+            """
+            
+            # Create popup
+            popup = folium.Popup(popup_html, max_width=200)
+            
+            # Add marker to cluster with color based on price
+            color = get_price_color(property_data['price'])
+            folium.Marker(
+                location=[property_data['latitude'], property_data['longitude']],
+                popup=popup,
+                icon=folium.Icon(color=color, icon="home", prefix='fa')
+            ).add_to(marker_cluster)
+    
+    # Add heatmap if selected
+    if view_type in ["heatmap", "both"]:
+        # Prepare data for heatmap
+        heat_data = [[row['latitude'], row['longitude'], row['price']/50000] 
+                     for _, row in valid_properties.iterrows() if pd.notna(row['latitude']) and pd.notna(row['longitude'])]
         
-        # Create popup
-        popup = folium.Popup(popup_html, max_width=200)
-        
-        # Add marker to cluster with color based on price
-        color = get_price_color(property_data['price'])
-        folium.Marker(
-            location=[property_data['latitude'], property_data['longitude']],
-            popup=popup,
-            icon=folium.Icon(color=color, icon="home", prefix='fa')
-        ).add_to(marker_cluster)
+        # Add heatmap layer
+        from folium.plugins import HeatMap
+        HeatMap(heat_data, 
+                radius=15, 
+                blur=10, 
+                gradient={0.4: 'blue', 0.65: 'lime', 0.8: 'yellow', 1: 'red'},
+                max_zoom=13).add_to(property_map)
+    
+    # Add a layer control if both view types are used
+    if view_type == "both":
+        folium.LayerControl().add_to(property_map)
     
     return property_map
 
@@ -588,8 +609,24 @@ def display_property_map(properties_df):
         st.warning("Could not geocode any property addresses. Map cannot be displayed.")
         return
     
+    # Add view type selector
+    view_type = st.radio(
+        "Map View Type", 
+        ["Markers", "Heatmap", "Both"],
+        key="map_view_type",
+        horizontal=True
+    )
+    
+    # Map the radio button selection to the parameter values for create_property_map
+    view_type_map = {
+        "Markers": "markers",
+        "Heatmap": "heatmap",
+        "Both": "both"
+    }
+    selected_view_type = view_type_map[view_type]
+    
     # Create the map
-    property_map = create_property_map(geocoded_properties)
+    property_map = create_property_map(geocoded_properties, view_type=selected_view_type)
     
     if property_map:
         # Display map in Streamlit
@@ -601,6 +638,14 @@ def display_property_map(properties_df):
         mapping_success_rate = (mapped_properties / total_properties) * 100 if total_properties > 0 else 0
         
         st.caption(f"Successfully mapped {mapped_properties} out of {total_properties} properties ({mapping_success_rate:.1f}%).")
+        
+        # Add map description based on view type
+        if view_type == "Markers":
+            st.caption("Showing clustered property markers. Click on clusters to zoom in and see individual properties.")
+        elif view_type == "Heatmap":
+            st.caption("Showing property price heatmap. Red areas indicate higher-priced properties.")
+        else:
+            st.caption("Showing both markers and heatmap. Use the layer control in the top right to toggle between views.")
         
         # Display the map
         folium_static(property_map)
