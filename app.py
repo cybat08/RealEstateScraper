@@ -144,7 +144,7 @@ use_demo_data = st.sidebar.checkbox("Use demo data for testing", value=False,
                                     help="Generate sample data for testing data validation and cleanup features")
 
 # Scrape button
-scrape_button = st.sidebar.button("Scrape Listings")
+scrape_button = st.sidebar.button("Scrape Listings", key="scrape_listings_button")
 
 # Handle scraping process
 if scrape_button:
@@ -283,7 +283,7 @@ with tab1:  # Real Estate Scraper tab
             st.subheader("Property Details")
             
             # Create a button to close the modal
-            if st.button("× Close Details"):
+            if st.button("× Close Details", key="close_property_details_button"):
                 st.session_state.selected_property = None
                 st.rerun()
             
@@ -491,7 +491,8 @@ with tab1:  # Real Estate Scraper tab
                 label="Download Results as CSV",
                 data=filtered_df.to_csv(index=False),
                 file_name="real_estate_listings.csv",
-                mime="text/csv"
+                mime="text/csv",
+                key="download_results_csv_button"
             )
     else:
         # Initial state or no data available
@@ -868,7 +869,8 @@ with tab6:
             label="Download as CSV",
             data=filtered_links_df.to_csv(index=False),
             file_name="scraped_links.csv",
-            mime="text/csv"
+            mime="text/csv",
+            key="download_links_csv_button"
         )
         
         # Export to Google Sheets button
