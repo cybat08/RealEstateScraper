@@ -1001,12 +1001,14 @@ with tab8:
         if input_symbols:
             st.session_state.stock_symbols = input_symbols
         
-        # Date range selection
+        # Date range selection with optimized default
         date_col1, date_col2 = st.columns(2)
         with date_col1:
+            # Default to 90 days for better performance
+            default_days = 90
             start_date = st.date_input(
                 "Start Date", 
-                value=dt.datetime.now() - dt.timedelta(days=365)
+                value=dt.datetime.now() - dt.timedelta(days=default_days)
             )
         with date_col2:
             end_date = st.date_input("End Date", value=dt.datetime.now())
@@ -1024,6 +1026,11 @@ with tab8:
         # Fetch button
         fetch_data = st.button("Fetch Stock Data", key="fetch_stock_data_button")
     
+    # Check date range and warn if too large
+    date_diff = (end_date - start_date).days
+    if date_diff > 180:
+        st.warning("⚠️ Large date ranges (>180 days) may cause slower performance. Consider reducing the range for faster loading.")
+    
     # Fetch data
     if fetch_data or not st.session_state.stock_data.empty:
         if fetch_data:
@@ -1033,11 +1040,15 @@ with tab8:
                     start_date_str = start_date.strftime('%Y-%m-%d')
                     end_date_str = end_date.strftime('%Y-%m-%d')
                     
-                    # Fetch data for all symbols
+                    # Fetch data for all symbols with improved performance settings
                     stock_data = yf.download(
                         st.session_state.stock_symbols,
                         start=start_date_str,
-                        end=end_date_str
+                        end=end_date_str,
+                        group_by='column',
+                        interval='1d',
+                        threads=False,  # Disable threading for more reliable results
+                        progress=False
                     )
                     
                     # Store in session state
@@ -1062,7 +1073,7 @@ with tab8:
                         if symbol in normalized.columns:
                             normalized[symbol] = normalized[symbol] / normalized[symbol].iloc[0] * 100
                     
-                    # Create a figure
+                    # Create a simpler, faster figure
                     fig = go.Figure()
                     
                     for symbol in st.session_state.stock_symbols:
@@ -1079,7 +1090,9 @@ with tab8:
                         xaxis_title="Date",
                         yaxis_title="Performance (%)",
                         legend_title="Stocks",
-                        height=500
+                        height=450,
+                        hovermode="x unified",    # More efficient hover mode
+                        template="simple_white"   # Lighter template for better performance
                     )
                     
                     st.plotly_chart(fig, use_container_width=True)
@@ -1177,12 +1190,19 @@ with tab8:
                                 low_col = 'Low'
                                 close_col = 'Close'
                             
+                            # For large datasets, show a subset of data points for better performance
+                            display_df = stock_df
+                            if len(stock_df) > 100:
+                                # Only show last 100 data points for faster rendering
+                                display_df = stock_df.iloc[-100:]
+                                st.caption(f"Showing most recent 100 days for better performance (full period: {len(stock_df)} days)")
+                                
                             fig = go.Figure(data=[go.Candlestick(
-                                x=stock_df.index,
-                                open=stock_df[open_col],
-                                high=stock_df[high_col],
-                                low=stock_df[low_col],
-                                close=stock_df[close_col],
+                                x=display_df.index,
+                                open=display_df[open_col],
+                                high=display_df[high_col],
+                                low=display_df[low_col],
+                                close=display_df[close_col],
                                 name=symbol
                             )])
                             
@@ -1190,7 +1210,9 @@ with tab8:
                                 title=f"{symbol} Stock Price",
                                 xaxis_title="Date",
                                 yaxis_title="Price ($)",
-                                height=500
+                                height=450,
+                                xaxis_rangeslider_visible=False,  # Hide rangeslider for better performance
+                                template="simple_white"  # Lighter template for better performance
                             )
                             
                             st.plotly_chart(fig, use_container_width=True)
@@ -1202,12 +1224,24 @@ with tab8:
                             else:
                                 vol_col = 'Volume'
                                 
-                            fig = px.bar(
-                                stock_df, 
-                                x=stock_df.index, 
-                                y=vol_col,
-                                title=f"{symbol} Trading Volume"
-                            )
+                            # For large datasets, downsample to weekly for better performance
+                            if len(stock_df) > 90:
+                                resampled = stock_df.resample('W').agg({vol_col: 'sum'})
+                                fig = px.bar(
+                                    resampled, 
+                                    x=resampled.index, 
+                                    y=vol_col,
+                                    title=f"{symbol} Weekly Trading Volume"
+                                )
+                                fig.update_layout(height=450, hovermode="x unified")
+                            else:
+                                fig = px.bar(
+                                    stock_df, 
+                                    x=stock_df.index, 
+                                    y=vol_col,
+                                    title=f"{symbol} Trading Volume"
+                                )
+                                fig.update_layout(height=450)
                             st.plotly_chart(fig, use_container_width=True)
                             
                         elif chart_type == "Returns":
@@ -1217,29 +1251,61 @@ with tab8:
                             else:
                                 close_col = 'Close'
                                 
-                            # Calculate daily returns
-                            returns = stock_df[close_col].pct_change() * 100
+                            # For large datasets, downsample for better performance
+                            display_df = stock_df
+                            if len(stock_df) > 180:
+                                # Only show recent data for better performance
+                                display_df = stock_df.iloc[-180:]
+                                st.caption(f"Showing most recent 180 days for better performance (full period: {len(stock_df)} days)")
                             
+                            # Calculate daily returns
+                            returns = display_df[close_col].pct_change() * 100
+                            returns = returns.dropna()  # Remove NaN values
+                            
+                            # Add some summary statistics
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("Avg. Daily Return", f"{returns.mean():.2f}%")
+                            with col2:
+                                st.metric("Volatility", f"{returns.std():.2f}%")
+                            with col3:
+                                st.metric("Max Daily Change", f"{returns.abs().max():.2f}%")
+                            
+                            # Create optimized figure
                             fig = go.Figure()
                             fig.add_trace(go.Scatter(
                                 x=returns.index, 
                                 y=returns,
                                 mode='lines',
-                                name='Daily Returns'
+                                name='Daily Returns',
+                                line=dict(width=1.5)  # Thinner line for better performance
                             ))
                             
                             fig.update_layout(
                                 title=f"{symbol} Daily Returns (%)",
                                 xaxis_title="Date",
                                 yaxis_title="Returns (%)",
-                                height=500
+                                height=450,
+                                hovermode="x unified",
+                                template="simple_white"  # Lighter template for better performance
                             )
                             
                             st.plotly_chart(fig, use_container_width=True)
                         
-                        # Show recent data
-                        st.subheader("Recent Data")
-                        st.dataframe(stock_df.tail(10), use_container_width=True)
+                        # Show recent data - optimized display
+                        with st.expander("View Recent Data", expanded=False):
+                            # Use more efficient display with limited columns
+                            display_cols = ['Open', 'High', 'Low', 'Close', 'Volume'] 
+                            if isinstance(stock_df.columns, pd.MultiIndex):
+                                # Handle multi-index columns
+                                display_df = pd.DataFrame()
+                                for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+                                    if (col, symbol) in stock_df.columns:
+                                        display_df[col] = stock_df[(col, symbol)]
+                                st.dataframe(display_df.tail(7), use_container_width=True)
+                            else:
+                                # Regular DataFrame
+                                st.dataframe(stock_df[display_cols].tail(7), use_container_width=True)
                     else:
                         st.warning(f"No data available for {symbol}")
     else:
