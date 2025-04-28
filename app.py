@@ -1145,21 +1145,44 @@ with tab8:
                         
                         # Create chart based on selection
                         if chart_type == "Closing Price":
-                            fig = px.line(
-                                stock_df, 
-                                x=stock_df.index, 
-                                y='Close',
-                                title=f"{symbol} Closing Price"
-                            )
+                            # Check if stock_df has multi-index columns (happens with multiple symbols)
+                            if isinstance(stock_df.columns, pd.MultiIndex):
+                                # When we have a multi-index DataFrame
+                                fig = px.line(
+                                    stock_df, 
+                                    x=stock_df.index, 
+                                    y=('Close', symbol) if ('Close', symbol) in stock_df.columns else stock_df.columns[0],
+                                    title=f"{symbol} Closing Price"
+                                )
+                            else:
+                                # When we have a regular DataFrame
+                                fig = px.line(
+                                    stock_df, 
+                                    x=stock_df.index, 
+                                    y='Close' if 'Close' in stock_df.columns else stock_df.columns[0],
+                                    title=f"{symbol} Closing Price"
+                                )
                             st.plotly_chart(fig, use_container_width=True)
                             
                         elif chart_type == "Candlestick":
+                            # Get column names based on DataFrame structure
+                            if isinstance(stock_df.columns, pd.MultiIndex):
+                                open_col = ('Open', symbol) if ('Open', symbol) in stock_df.columns else stock_df.columns[0]
+                                high_col = ('High', symbol) if ('High', symbol) in stock_df.columns else stock_df.columns[1]
+                                low_col = ('Low', symbol) if ('Low', symbol) in stock_df.columns else stock_df.columns[2]
+                                close_col = ('Close', symbol) if ('Close', symbol) in stock_df.columns else stock_df.columns[3]
+                            else:
+                                open_col = 'Open'
+                                high_col = 'High'
+                                low_col = 'Low'
+                                close_col = 'Close'
+                            
                             fig = go.Figure(data=[go.Candlestick(
                                 x=stock_df.index,
-                                open=stock_df['Open'],
-                                high=stock_df['High'],
-                                low=stock_df['Low'],
-                                close=stock_df['Close'],
+                                open=stock_df[open_col],
+                                high=stock_df[high_col],
+                                low=stock_df[low_col],
+                                close=stock_df[close_col],
                                 name=symbol
                             )])
                             
@@ -1173,17 +1196,29 @@ with tab8:
                             st.plotly_chart(fig, use_container_width=True)
                             
                         elif chart_type == "Volume":
+                            # Determine volume column based on DataFrame structure
+                            if isinstance(stock_df.columns, pd.MultiIndex):
+                                vol_col = ('Volume', symbol) if ('Volume', symbol) in stock_df.columns else stock_df.columns[4]
+                            else:
+                                vol_col = 'Volume'
+                                
                             fig = px.bar(
                                 stock_df, 
                                 x=stock_df.index, 
-                                y='Volume',
+                                y=vol_col,
                                 title=f"{symbol} Trading Volume"
                             )
                             st.plotly_chart(fig, use_container_width=True)
                             
                         elif chart_type == "Returns":
+                            # Determine close column based on DataFrame structure
+                            if isinstance(stock_df.columns, pd.MultiIndex):
+                                close_col = ('Close', symbol) if ('Close', symbol) in stock_df.columns else stock_df.columns[3]
+                            else:
+                                close_col = 'Close'
+                                
                             # Calculate daily returns
-                            returns = stock_df['Close'].pct_change() * 100
+                            returns = stock_df[close_col].pct_change() * 100
                             
                             fig = go.Figure()
                             fig.add_trace(go.Scatter(
