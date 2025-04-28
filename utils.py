@@ -447,6 +447,16 @@ def geocode_properties(properties_df):
     # Create a copy of the dataframe to avoid modifying the original during iteration
     result_df = properties_df.copy()
     
+    # Limit the number of properties to geocode to improve performance
+    max_to_geocode = min(15, mask.sum())
+    if mask.sum() > max_to_geocode:
+        st.info(f"To improve performance, only geocoding {max_to_geocode} out of {mask.sum()} properties for the map.")
+        # Sort by price descending to prioritize higher-priced properties
+        if 'price' in properties_df.columns:
+            prioritized = properties_df[mask].sort_values(by='price', ascending=False)
+            to_geocode = prioritized.index[:max_to_geocode]
+            mask = mask & properties_df.index.isin(to_geocode)
+    
     # Show a progress bar for geocoding
     with st.spinner("Geocoding property addresses..."):
         progress_bar = st.progress(0)
@@ -473,8 +483,8 @@ def geocode_properties(properties_df):
             processed += 1
             progress_bar.progress(processed / rows_to_process)
             
-            # Pause briefly to avoid overloading the geocoding service
-            time.sleep(0.5)
+            # Use a smaller delay for geocoding service
+            time.sleep(0.2)
         
         # Clear progress bar
         progress_bar.empty()
@@ -501,38 +511,58 @@ def create_property_map(properties_df):
     center_lat = valid_properties['latitude'].mean()
     center_lng = valid_properties['longitude'].mean()
     
-    # Create the map
-    property_map = folium.Map(location=[center_lat, center_lng], zoom_start=12)
+    # Create the map with simplified tiles for faster loading
+    property_map = folium.Map(
+        location=[center_lat, center_lng], 
+        zoom_start=12,
+        tiles='CartoDB positron',  # Use a lighter tile set for faster loading
+        prefer_canvas=True         # Use canvas rendering for better performance
+    )
     
     # Add a marker cluster to handle many properties
     marker_cluster = MarkerCluster().add_to(property_map)
     
-    # Add markers for each property
-    for idx, property_data in valid_properties.iterrows():
-        # Create popup content with property details
+    # Define price color ranges
+    def get_price_color(price):
+        if pd.isna(price):
+            return "gray"
+        elif price < 300000:
+            return "green"
+        elif price < 600000:
+            return "blue"
+        elif price < 1000000:
+            return "orange"
+        else:
+            return "red"
+    
+    # Add markers for each property - limit to 50 for performance
+    properties_to_display = valid_properties
+    if len(valid_properties) > 50:
+        # Only show top 50 properties by price for better performance
+        properties_to_display = valid_properties.nlargest(50, 'price')
+    
+    for idx, property_data in properties_to_display.iterrows():
+        # Create simplified popup content with property details
         price = format_price(property_data['price'])
-        beds = property_data['bedrooms'] if pd.notna(property_data['bedrooms']) else "N/A"
-        baths = property_data['bathrooms'] if pd.notna(property_data['bathrooms']) else "N/A"
-        sqft = f"{property_data['square_feet']:,.0f}" if pd.notna(property_data['square_feet']) else "N/A"
-        prop_type = property_data['property_type'] if pd.notna(property_data['property_type']) else "N/A"
+        beds_baths = f"{property_data['bedrooms']:.0f}bd, {property_data['bathrooms']:.1f}ba" if pd.notna(property_data['bedrooms']) and pd.notna(property_data['bathrooms']) else "N/A"
         
         popup_html = f"""
-        <div style="width: 200px;">
-            <h4 style="margin: 5px 0;">{price}</h4>
+        <div style="width: 180px;">
+            <h4 style="margin: 3px 0;">{price}</h4>
             <p style="margin: 2px 0;"><b>{property_data['address']}</b></p>
-            <p style="margin: 2px 0;">{beds} beds | {baths} baths | {sqft} sqft</p>
-            <p style="margin: 2px 0;">{prop_type} | {property_data['source']}</p>
+            <p style="margin: 2px 0;">{beds_baths}</p>
         </div>
         """
         
         # Create popup
-        popup = folium.Popup(popup_html, max_width=300)
+        popup = folium.Popup(popup_html, max_width=200)
         
-        # Add marker to cluster
+        # Add marker to cluster with color based on price
+        color = get_price_color(property_data['price'])
         folium.Marker(
             location=[property_data['latitude'], property_data['longitude']],
             popup=popup,
-            icon=folium.Icon(color="blue", icon="home")
+            icon=folium.Icon(color=color, icon="home", prefix='fa')
         ).add_to(marker_cluster)
     
     return property_map

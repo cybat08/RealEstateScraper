@@ -990,14 +990,14 @@ with tab8:
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        # Stock symbols input
+        # Stock symbols input - limit to 5 for performance
         symbols_input = st.text_input(
-            "Stock Symbols (comma-separated)",
+            "Stock Symbols (comma-separated, max 5)",
             value=",".join(st.session_state.stock_symbols)
         )
         
-        # Parse the input symbols
-        input_symbols = [s.strip() for s in symbols_input.split(",") if s.strip()]
+        # Parse the input symbols and limit to 5
+        input_symbols = [s.strip() for s in symbols_input.split(",") if s.strip()][:5]
         if input_symbols:
             st.session_state.stock_symbols = input_symbols
         
