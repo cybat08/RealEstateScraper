@@ -765,126 +765,204 @@ with tab4:
                 investment_horizon_years=investment_horizon
             )
             
-            # Display key metrics with visual indicators
+            # Display key metrics with visual indicators and error handling
             col1, col2 = st.columns(2)
             
+            # Helper function to safely get values from dictionary with default fallback
+            def safe_get(metrics_dict, key, default=0):
+                try:
+                    return metrics_dict.get(key, default)
+                except:
+                    return default
+            
             with col1:
-                # Monthly cash flow
-                monthly_cash_flow = roi_metrics['monthly_cash_flow']
-                st.metric(
-                    "Monthly Cash Flow", 
-                    f"${monthly_cash_flow:.2f}",
-                    delta=None,
-                    delta_color="normal"
-                )
+                try:
+                    # Monthly cash flow
+                    monthly_cash_flow = safe_get(roi_metrics, 'monthly_cash_flow')
+                    st.metric(
+                        "Monthly Cash Flow", 
+                        f"${monthly_cash_flow:.2f}",
+                        delta=None,
+                        delta_color="normal"
+                    )
+                except Exception as e:
+                    st.metric("Monthly Cash Flow", "N/A")
+                    
+                try:
+                    # Cap rate
+                    cap_rate = safe_get(roi_metrics, 'cap_rate')
+                    st.metric(
+                        "Cap Rate", 
+                        f"{cap_rate:.2f}%",
+                        delta=None,
+                        delta_color="normal" 
+                    )
+                except Exception as e:
+                    st.metric("Cap Rate", "N/A")
                 
-                # Cap rate
-                cap_rate = roi_metrics['cap_rate']
-                st.metric(
-                    "Cap Rate", 
-                    f"{cap_rate:.2f}%",
-                    delta=None,
-                    delta_color="normal" 
-                )
+                try:
+                    # Monthly mortgage payment
+                    mortgage_payment = safe_get(roi_metrics, 'mortgage_payment')
+                    st.metric(
+                        "Monthly Mortgage", 
+                        f"${mortgage_payment:.2f}",
+                        delta=None,
+                        delta_color="normal"
+                    )
+                except Exception as e:
+                    st.metric("Monthly Mortgage", "N/A")
                 
-                # Monthly mortgage payment
-                mortgage_payment = roi_metrics['mortgage_payment']
-                st.metric(
-                    "Monthly Mortgage", 
-                    f"${mortgage_payment:.2f}",
-                    delta=None,
-                    delta_color="normal"
-                )
-                
-                # Monthly expenses
-                monthly_expenses = roi_metrics['monthly_expenses']
-                st.metric(
-                    "Monthly Expenses", 
-                    f"${monthly_expenses:.2f}",
-                    delta=None,
-                    delta_color="normal"
-                )
+                try:
+                    # Monthly expenses
+                    monthly_expenses = safe_get(roi_metrics, 'monthly_expenses')
+                    st.metric(
+                        "Monthly Expenses", 
+                        f"${monthly_expenses:.2f}",
+                        delta=None,
+                        delta_color="normal"
+                    )
+                except Exception as e:
+                    st.metric("Monthly Expenses", "N/A")
                 
             with col2:
-                # Cash on cash return
-                cash_on_cash = roi_metrics['cash_on_cash_return']
-                st.metric(
-                    "Cash on Cash Return", 
-                    f"{cash_on_cash:.2f}%",
-                    delta=None,
-                    delta_color="normal"
-                )
+                try:
+                    # Cash on cash return
+                    cash_on_cash = safe_get(roi_metrics, 'cash_on_cash_return')
+                    st.metric(
+                        "Cash on Cash Return", 
+                        f"{cash_on_cash:.2f}%",
+                        delta=None,
+                        delta_color="normal"
+                    )
+                except Exception as e:
+                    st.metric("Cash on Cash Return", "N/A")
+                    cash_on_cash = 0
                 
-                # 5-year equity growth
-                equity_5yr = roi_metrics['equity_5yr']
-                st.metric(
-                    "Equity in 5 Years", 
-                    f"${equity_5yr:.2f}",
-                    delta=None,
-                    delta_color="normal"
-                )
+                try:
+                    # 5-year equity growth
+                    equity_5yr = safe_get(roi_metrics, 'equity_5yr')
+                    st.metric(
+                        "Equity in 5 Years", 
+                        f"${equity_5yr:.2f}",
+                        delta=None,
+                        delta_color="normal"
+                    )
+                except Exception as e:
+                    st.metric("Equity in 5 Years", "N/A")
                 
-                # Total return on investment
-                total_roi = roi_metrics['total_roi_pct']
-                st.metric(
-                    f"Total ROI ({investment_horizon} years)", 
-                    f"{total_roi:.2f}%",
-                    delta=None,
-                    delta_color="normal"
-                )
+                try:
+                    # Total return on investment
+                    # First check for total_roi_pct, then fall back to roi for compatibility
+                    if 'total_roi_pct' in roi_metrics:
+                        total_roi = roi_metrics['total_roi_pct']
+                    else:
+                        total_roi = safe_get(roi_metrics, 'roi')
+                        
+                    st.metric(
+                        f"Total ROI ({investment_horizon} years)", 
+                        f"{total_roi:.2f}%",
+                        delta=None,
+                        delta_color="normal"
+                    )
+                except Exception as e:
+                    st.metric(f"Total ROI ({investment_horizon} years)", "N/A")
+                    total_roi = 0
                 
-                # Annualized ROI
-                annualized_roi = roi_metrics['annualized_roi']
-                st.metric(
-                    "Annualized ROI", 
-                    f"{annualized_roi:.2f}%",
-                    delta=None,
-                    delta_color="normal"
-                )
+                try:
+                    # Annualized ROI
+                    annualized_roi = safe_get(roi_metrics, 'annualized_roi')
+                    st.metric(
+                        "Annualized ROI", 
+                        f"{annualized_roi:.2f}%",
+                        delta=None,
+                        delta_color="normal"
+                    )
+                except Exception as e:
+                    st.metric("Annualized ROI", "N/A")
             
             # Display a summary assessment
             st.subheader("Investment Summary")
             
-            # Determine overall assessment
-            if cash_on_cash >= 8 and cap_rate >= 6 and monthly_cash_flow > 0:
-                assessment = "Excellent Investment Opportunity"
-                assessment_color = "green"
-            elif cash_on_cash >= 5 and cap_rate >= 4 and monthly_cash_flow > 0:
-                assessment = "Good Investment Opportunity"
-                assessment_color = "blue"
-            elif monthly_cash_flow > 0:
-                assessment = "Fair Investment Opportunity"
-                assessment_color = "orange"
-            else:
-                assessment = "Poor Investment Opportunity"
-                assessment_color = "red"
+            # Safely get values for assessment
+            try:
+                monthly_cash_flow = safe_get(roi_metrics, 'monthly_cash_flow', 0)
+                cap_rate = safe_get(roi_metrics, 'cap_rate', 0)
+                cash_on_cash = safe_get(roi_metrics, 'cash_on_cash_return', 0)
+                
+                # Determine overall assessment
+                if cash_on_cash >= 8 and cap_rate >= 6 and monthly_cash_flow > 0:
+                    assessment = "Excellent Investment Opportunity"
+                    assessment_color = "green"
+                elif cash_on_cash >= 5 and cap_rate >= 4 and monthly_cash_flow > 0:
+                    assessment = "Good Investment Opportunity"
+                    assessment_color = "blue"
+                elif monthly_cash_flow > 0:
+                    assessment = "Fair Investment Opportunity"
+                    assessment_color = "orange"
+                else:
+                    assessment = "Poor Investment Opportunity"
+                    assessment_color = "red"
+                    
+                # Alternative: Use recommendation from ROI metrics if available
+                if 'investment_recommendation' in roi_metrics and roi_metrics['investment_recommendation']:
+                    # Use this recommendation text and determine appropriate color
+                    investment_rec = roi_metrics['investment_recommendation']
+                    if "excellent" in investment_rec.lower():
+                        assessment = investment_rec
+                        assessment_color = "green"
+                    elif "good" in investment_rec.lower():
+                        assessment = investment_rec
+                        assessment_color = "blue"
+                    elif "average" in investment_rec.lower():
+                        assessment = investment_rec
+                        assessment_color = "orange"
+                    elif "below" in investment_rec.lower():
+                        assessment = investment_rec
+                        assessment_color = "red"
+                    elif "not recommended" in investment_rec.lower():
+                        assessment = investment_rec
+                        assessment_color = "red"
+            except Exception as e:
+                assessment = "Unable to determine assessment"
+                assessment_color = "gray"
             
             # Display colored assessment
             st.markdown(f"<h3 style='color:{assessment_color}'>{assessment}</h3>", unsafe_allow_html=True)
             
-            # List key strengths and weaknesses
-            strengths = []
-            weaknesses = []
-            
-            if cash_on_cash >= 8:
-                strengths.append("Strong cash on cash return")
-            elif cash_on_cash < 4:
-                weaknesses.append("Low cash on cash return")
+            try:
+                # List key strengths and weaknesses
+                strengths = []
+                weaknesses = []
                 
-            if cap_rate >= 6:
-                strengths.append("Strong cap rate")
-            elif cap_rate < 4:
-                weaknesses.append("Low cap rate")
+                # Safely get values with default fallbacks
+                cash_on_cash = safe_get(roi_metrics, 'cash_on_cash_return', 0)
+                cap_rate = safe_get(roi_metrics, 'cap_rate', 0)
+                monthly_cash_flow = safe_get(roi_metrics, 'monthly_cash_flow', 0)
+                total_roi = safe_get(roi_metrics, 'roi', 0)
                 
-            if monthly_cash_flow > 200:
-                strengths.append("Strong positive cash flow")
-            elif monthly_cash_flow < 0:
-                weaknesses.append("Negative cash flow")
-                
-            if total_roi > 50:
-                strengths.append(f"Strong total ROI over {investment_horizon} years")
-            elif total_roi < 20:
-                weaknesses.append(f"Low total ROI over {investment_horizon} years")
+                if cash_on_cash >= 8:
+                    strengths.append("Strong cash on cash return")
+                elif cash_on_cash < 4:
+                    weaknesses.append("Low cash on cash return")
+                    
+                if cap_rate >= 6:
+                    strengths.append("Strong cap rate")
+                elif cap_rate < 4:
+                    weaknesses.append("Low cap rate")
+                    
+                if monthly_cash_flow > 200:
+                    strengths.append("Strong positive cash flow")
+                elif monthly_cash_flow < 0:
+                    weaknesses.append("Negative cash flow")
+                    
+                if total_roi > 50:
+                    strengths.append(f"Strong total ROI over {investment_horizon} years")
+                elif total_roi < 20:
+                    weaknesses.append(f"Low total ROI over {investment_horizon} years")
+            except Exception as e:
+                # If there's an error, provide default analysis
+                strengths = ["Analysis based on provided inputs"]
+                weaknesses = ["Consider refining inputs for more accurate analysis"]
             
             # Display strengths and weaknesses
             if strengths:
@@ -900,63 +978,79 @@ with tab4:
             # Add a disclaimer
             st.caption("Note: These calculations are estimates based on the provided inputs. Actual results may vary based on market conditions, property management, and other factors.")
             
-            # Display a chart showing cash flow over time
-            st.subheader("Cash Flow Projection")
-            
-            # Create data for the chart
-            years = list(range(1, investment_horizon + 1))
-            annual_cash_flows = [(roi_metrics['monthly_cash_flow'] * 12) * (1.03 ** (year - 1)) for year in years]
-            
-            # Create the chart
-            fig = px.bar(
-                x=years, 
-                y=annual_cash_flows,
-                labels={'x': 'Year', 'y': 'Annual Cash Flow ($)'},
-                title='Projected Annual Cash Flow'
-            )
-            
-            fig.update_traces(marker_color='blue')
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Display a table with year-by-year projections
-            st.subheader("Year-by-Year Projections")
-            
-            # Create projection data
-            projection_data = []
-            property_value = property_price
-            loan_balance = property_price * (1 - down_payment_pct / 100)
-            
-            for year in range(1, investment_horizon + 1):
-                # Calculate appreciation for this year
-                annual_appreciation_rate = appreciation_rate if appreciation_override > 0 else roi_metrics['appreciation_rate']
-                property_value *= (1 + annual_appreciation_rate / 100)
+            try:
+                # Display a chart showing cash flow over time
+                st.subheader("Cash Flow Projection")
                 
-                # Calculate loan paydown
-                # Simple approximation of loan balance
-                if loan_balance > 0:
-                    annual_payment = mortgage_payment * 12
-                    annual_interest = loan_balance * (interest_rate / 100)
-                    principal_payment = min(annual_payment - annual_interest, loan_balance)
-                    loan_balance -= principal_payment
+                # Safely get monthly cash flow
+                monthly_cash_flow = safe_get(roi_metrics, 'monthly_cash_flow', 0)
                 
-                # Calculate equity
-                equity = property_value - loan_balance
+                # Create data for the chart
+                years = list(range(1, investment_horizon + 1))
+                annual_cash_flows = [(monthly_cash_flow * 12) * (1.03 ** (year - 1)) for year in years]
                 
-                # Calculate cash flow with small inflation adjustment for expenses
-                annual_cash_flow = annual_cash_flows[year-1]
+                # Create the chart
+                fig = px.bar(
+                    x=years, 
+                    y=annual_cash_flows,
+                    labels={'x': 'Year', 'y': 'Annual Cash Flow ($)'},
+                    title='Projected Annual Cash Flow'
+                )
                 
-                # Add to projection data
-                projection_data.append({
-                    'Year': year,
-                    'Property Value': f"${property_value:.2f}",
-                    'Loan Balance': f"${loan_balance:.2f}",
-                    'Equity': f"${equity:.2f}",
-                    'Annual Cash Flow': f"${annual_cash_flow:.2f}"
-                })
-            
-            # Create DataFrame and display
-            projection_df = pd.DataFrame(projection_data)
-            st.dataframe(projection_df, use_container_width=True)
+                fig.update_traces(marker_color='blue')
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Display a table with year-by-year projections
+                st.subheader("Year-by-Year Projections")
+                
+                # Create projection data
+                projection_data = []
+                property_value = property_price
+                loan_balance = property_price * (1 - down_payment_pct / 100)
+                
+                # Safely get appreciation rate
+                if appreciation_override > 0:
+                    annual_appreciation_rate = appreciation_override
+                else:
+                    annual_appreciation_rate = safe_get(roi_metrics, 'appreciation_rate', 3.5)
+                
+                # Safely get mortgage payment
+                mortgage_payment = safe_get(roi_metrics, 'mortgage_payment', 0)
+                
+                for year in range(1, investment_horizon + 1):
+                    # Calculate property value growth
+                    property_value *= (1 + annual_appreciation_rate / 100)
+                    
+                    # Calculate loan paydown
+                    # Simple approximation of loan balance
+                    if loan_balance > 0:
+                        annual_payment = mortgage_payment * 12
+                        annual_interest = loan_balance * (interest_rate / 100)
+                        principal_payment = min(annual_payment - annual_interest, loan_balance)
+                        loan_balance -= principal_payment
+                    
+                    # Calculate equity
+                    equity = property_value - loan_balance
+                    
+                    # Calculate cash flow with small inflation adjustment for expenses
+                    annual_cash_flow = annual_cash_flows[year-1]
+                    
+                    # Add to projection data
+                    projection_data.append({
+                        'Year': year,
+                        'Property Value': f"${property_value:.2f}",
+                        'Loan Balance': f"${loan_balance:.2f}",
+                        'Equity': f"${equity:.2f}",
+                        'Annual Cash Flow': f"${annual_cash_flow:.2f}"
+                    })
+                
+                # Create DataFrame and display
+                projection_df = pd.DataFrame(projection_data)
+                st.dataframe(projection_df, use_container_width=True)
+                
+            except Exception as e:
+                st.warning("Unable to display projections. Please check your input values and try again.")
+                st.error(f"Error details: {str(e)}")
         else:
             # Show instructions when first loading the tab
             st.info("Enter property details in the form on the left and click 'Analyze Investment' to see results.")
