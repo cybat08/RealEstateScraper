@@ -488,7 +488,7 @@ with tab1:  # Real Estate Scraper tab
                 if total_pages > 1:
                     page_col1, page_col2 = st.columns([3, 1])
                     with page_col1:
-                        page = st.slider("Page", 1, max(1, total_pages), 1)
+                        page = st.slider("Page", 1, max(1, total_pages), 1, key="pagination_slider")
                     with page_col2:
                         st.write(f"Page {page} of {total_pages}")
                 else:
