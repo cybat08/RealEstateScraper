@@ -1,9 +1,12 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import time
 import json
 import os
+import datetime as dt
+import yfinance as yf
 from scraper import scrape_zillow, scrape_realtor, scrape_trulia
 from data_processor import filter_properties, get_statistics
 from utils import get_unique_values, format_price, display_property_card
@@ -56,7 +59,14 @@ if 'google_credentials' not in st.session_state:
     st.session_state.google_credentials = None
 
 # Create tabs for different functionality
-tab1, tab2, tab3 = st.tabs(["Real Estate Scraper", "Link Scraper", "Google Sheets Export"])
+tab1, tab2, tab3, tab4 = st.tabs(["Real Estate Scraper", "Link Scraper", "Google Sheets Export", "Stock Viewer"])
+
+# Initialize stock-related session state variables
+if 'stock_data' not in st.session_state:
+    st.session_state.stock_data = pd.DataFrame()
+
+if 'stock_symbols' not in st.session_state:
+    st.session_state.stock_symbols = ["AAPL", "MSFT", "GOOG", "AMZN", "META"]
 
 # Sidebar for scraping controls
 st.sidebar.header("Scraper Controls")
@@ -523,3 +533,233 @@ with tab3:
                     st.error(f"Export failed: {result['error']}")
             except Exception as e:
                 st.error(f"Error during export: {str(e)}")
+                
+# Tab 4: Stock Viewer
+with tab4:
+    st.header("Stock Market Viewer")
+    st.markdown("Monitor stock performance and analyze market trends to inform your real estate investment decisions.")
+    
+    # Stock selection
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        # Stock symbols input
+        symbols_input = st.text_input(
+            "Stock Symbols (comma-separated)",
+            value=",".join(st.session_state.stock_symbols)
+        )
+        
+        # Parse the input symbols
+        input_symbols = [s.strip() for s in symbols_input.split(",") if s.strip()]
+        if input_symbols:
+            st.session_state.stock_symbols = input_symbols
+        
+        # Date range selection
+        date_col1, date_col2 = st.columns(2)
+        with date_col1:
+            start_date = st.date_input(
+                "Start Date", 
+                value=dt.datetime.now() - dt.timedelta(days=365)
+            )
+        with date_col2:
+            end_date = st.date_input("End Date", value=dt.datetime.now())
+            
+    with col2:
+        # Chart type selection
+        chart_type = st.selectbox(
+            "Chart Type",
+            ["Closing Price", "Candlestick", "Volume", "Returns"]
+        )
+        
+        # Comparison option
+        compare_stocks = st.checkbox("Compare Performance", value=True)
+        
+        # Fetch button
+        fetch_data = st.button("Fetch Stock Data")
+    
+    # Fetch data
+    if fetch_data or not st.session_state.stock_data.empty:
+        if fetch_data:
+            with st.spinner("Fetching stock data..."):
+                try:
+                    # Convert dates to string format
+                    start_date_str = start_date.strftime('%Y-%m-%d')
+                    end_date_str = end_date.strftime('%Y-%m-%d')
+                    
+                    # Fetch data for all symbols
+                    stock_data = yf.download(
+                        st.session_state.stock_symbols,
+                        start=start_date_str,
+                        end=end_date_str
+                    )
+                    
+                    # Store in session state
+                    st.session_state.stock_data = stock_data
+                    st.success(f"Successfully fetched data for {', '.join(st.session_state.stock_symbols)}")
+                except Exception as e:
+                    st.error(f"Error fetching stock data: {str(e)}")
+        
+        if not st.session_state.stock_data.empty:
+            # Show charts based on selection
+            if chart_type == "Closing Price" and compare_stocks:
+                # Show comparative closing prices
+                if len(st.session_state.stock_symbols) > 1:
+                    st.subheader("Comparative Stock Performance")
+                    
+                    # Extract closing prices
+                    closing_prices = st.session_state.stock_data['Close']
+                    
+                    # Create normalized chart (percentage change)
+                    normalized = closing_prices.copy()
+                    for symbol in st.session_state.stock_symbols:
+                        if symbol in normalized.columns:
+                            normalized[symbol] = normalized[symbol] / normalized[symbol].iloc[0] * 100
+                    
+                    # Create a figure
+                    fig = go.Figure()
+                    
+                    for symbol in st.session_state.stock_symbols:
+                        if symbol in normalized.columns:
+                            fig.add_trace(go.Scatter(
+                                x=normalized.index,
+                                y=normalized[symbol],
+                                mode='lines',
+                                name=symbol
+                            ))
+                    
+                    fig.update_layout(
+                        title="Normalized Stock Performance (Starting Value = 100%)",
+                        xaxis_title="Date",
+                        yaxis_title="Performance (%)",
+                        legend_title="Stocks",
+                        height=500
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("Please select multiple stocks to compare performance.")
+            
+            # Individual stock details
+            st.subheader("Individual Stock Analysis")
+            
+            # Create tabs for each stock
+            stock_tabs = st.tabs(st.session_state.stock_symbols)
+            
+            for i, symbol in enumerate(st.session_state.stock_symbols):
+                with stock_tabs[i]:
+                    # Check if data exists for this symbol
+                    has_data = False
+                    
+                    if len(st.session_state.stock_symbols) > 1:
+                        # Multi-stock dataframe
+                        if symbol in st.session_state.stock_data['Close'].columns:
+                            has_data = True
+                            stock_df = pd.DataFrame({
+                                'Open': st.session_state.stock_data['Open'][symbol],
+                                'High': st.session_state.stock_data['High'][symbol],
+                                'Low': st.session_state.stock_data['Low'][symbol],
+                                'Close': st.session_state.stock_data['Close'][symbol],
+                                'Volume': st.session_state.stock_data['Volume'][symbol]
+                            })
+                    else:
+                        # Single stock dataframe
+                        has_data = True
+                        stock_df = st.session_state.stock_data.copy()
+                    
+                    if has_data:
+                        # Stock info
+                        try:
+                            stock_info = yf.Ticker(symbol).info
+                            if stock_info:
+                                col1, col2, col3 = st.columns(3)
+                                
+                                with col1:
+                                    if 'currentPrice' in stock_info:
+                                        st.metric(
+                                            "Current Price", 
+                                            f"${stock_info['currentPrice']:.2f}",
+                                            f"{stock_info.get('regularMarketChangePercent', 0):.2f}%"
+                                        )
+                                
+                                with col2:
+                                    if 'fiftyTwoWeekHigh' in stock_info and 'fiftyTwoWeekLow' in stock_info:
+                                        st.metric(
+                                            "52 Week Range", 
+                                            f"${stock_info['fiftyTwoWeekHigh']:.2f}",
+                                            f"Low: ${stock_info['fiftyTwoWeekLow']:.2f}"
+                                        )
+                                
+                                with col3:
+                                    if 'marketCap' in stock_info:
+                                        market_cap_b = stock_info['marketCap'] / 1e9
+                                        st.metric("Market Cap", f"${market_cap_b:.2f}B")
+                        except Exception as e:
+                            st.warning(f"Could not fetch additional info: {str(e)}")
+                        
+                        # Create chart based on selection
+                        if chart_type == "Closing Price":
+                            fig = px.line(
+                                stock_df, 
+                                x=stock_df.index, 
+                                y='Close',
+                                title=f"{symbol} Closing Price"
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                        elif chart_type == "Candlestick":
+                            fig = go.Figure(data=[go.Candlestick(
+                                x=stock_df.index,
+                                open=stock_df['Open'],
+                                high=stock_df['High'],
+                                low=stock_df['Low'],
+                                close=stock_df['Close'],
+                                name=symbol
+                            )])
+                            
+                            fig.update_layout(
+                                title=f"{symbol} Stock Price",
+                                xaxis_title="Date",
+                                yaxis_title="Price ($)",
+                                height=500
+                            )
+                            
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                        elif chart_type == "Volume":
+                            fig = px.bar(
+                                stock_df, 
+                                x=stock_df.index, 
+                                y='Volume',
+                                title=f"{symbol} Trading Volume"
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                        elif chart_type == "Returns":
+                            # Calculate daily returns
+                            returns = stock_df['Close'].pct_change() * 100
+                            
+                            fig = go.Figure()
+                            fig.add_trace(go.Scatter(
+                                x=returns.index, 
+                                y=returns,
+                                mode='lines',
+                                name='Daily Returns'
+                            ))
+                            
+                            fig.update_layout(
+                                title=f"{symbol} Daily Returns (%)",
+                                xaxis_title="Date",
+                                yaxis_title="Returns (%)",
+                                height=500
+                            )
+                            
+                            st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Show recent data
+                        st.subheader("Recent Data")
+                        st.dataframe(stock_df.tail(10), use_container_width=True)
+                    else:
+                        st.warning(f"No data available for {symbol}")
+    else:
+        # Information message
+        st.info("Enter stock symbols and click 'Fetch Stock Data' to view stock information and charts.")
