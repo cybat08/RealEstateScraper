@@ -91,6 +91,45 @@ location = st.sidebar.text_input("Location (city, state or zip code)", "Seattle,
 # Number of listings to scrape
 num_listings = st.sidebar.slider("Maximum number of listings to scrape per site", 5, 100, 20)
 
+# Advanced scraping filters
+with st.sidebar.expander("Advanced Scraping Filters"):
+    # Price range filter for scraping
+    min_price_scrape = st.number_input("Minimum Price ($)", 
+                                       min_value=0, 
+                                       max_value=10000000, 
+                                       value=0,
+                                       step=50000)
+    
+    max_price_scrape = st.number_input("Maximum Price ($)", 
+                                       min_value=0, 
+                                       max_value=10000000, 
+                                       value=2000000,
+                                       step=50000)
+    
+    # Bedrooms filter
+    min_beds_scrape = st.number_input("Minimum Bedrooms", 
+                                     min_value=0, 
+                                     max_value=10, 
+                                     value=0)
+    
+    # Bathrooms filter
+    min_baths_scrape = st.number_input("Minimum Bathrooms", 
+                                      min_value=0, 
+                                      max_value=10, 
+                                      value=0)
+    
+    # Property type filter
+    property_types_scrape = st.multiselect(
+        "Property Types",
+        ["House", "Condo", "Townhouse", "Multi-Family", "Apartment", "Land", "Commercial"],
+        default=["House", "Condo", "Townhouse"]
+    )
+    
+    # Additional filters
+    only_new_listings = st.checkbox("Only New Listings (last 7 days)", value=False)
+    include_sold = st.checkbox("Include Recently Sold Properties", value=False)
+    include_pending = st.checkbox("Include Pending/Contingent Listings", value=True)
+
 # Option to load demo data
 use_demo_data = st.sidebar.checkbox("Use demo data for testing", value=False, 
                                     help="Generate sample data for testing data validation and cleanup features")
@@ -143,14 +182,26 @@ if scrape_button:
                 try:
                     status_text.text(f"Scraping {website}... Please wait...")
                     
+                    # Create a dictionary with all filter parameters
+                    filter_params = {
+                        'min_price': min_price_scrape,
+                        'max_price': max_price_scrape,
+                        'min_beds': min_beds_scrape,
+                        'min_baths': min_baths_scrape,
+                        'property_types': property_types_scrape,
+                        'new_listings': only_new_listings,
+                        'include_sold': include_sold,
+                        'include_pending': include_pending
+                    }
+                    
                     if website == "Zillow":
-                        new_listings = scrape_zillow(location, num_listings)
+                        new_listings = scrape_zillow(location, num_listings, **filter_params)
                         st.sidebar.write(f"Debug: Zillow listings count: {len(new_listings) if not isinstance(new_listings, Exception) else 'Error'}")
                     elif website == "Realtor.com":
-                        new_listings = scrape_realtor(location, num_listings)
+                        new_listings = scrape_realtor(location, num_listings, **filter_params)
                         st.sidebar.write(f"Debug: Realtor listings count: {len(new_listings) if not isinstance(new_listings, Exception) else 'Error'}")
                     elif website == "Trulia":
-                        new_listings = scrape_trulia(location, num_listings)
+                        new_listings = scrape_trulia(location, num_listings, **filter_params)
                         st.sidebar.write(f"Debug: Trulia listings count: {len(new_listings) if not isinstance(new_listings, Exception) else 'Error'}")
                     
                     if isinstance(new_listings, pd.DataFrame) and not new_listings.empty:

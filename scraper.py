@@ -67,20 +67,98 @@ def extract_number(text, pattern=r'\d+'):
         return float(match.group())
     return None
 
-def scrape_zillow(location, max_listings=20):
+def scrape_zillow(location, max_listings=20, min_price=0, max_price=None, min_beds=0, 
+               min_baths=0, property_types=None, new_listings=False, include_sold=False, 
+               include_pending=True):
     """
-    Scrape real estate listings from Zillow
+    Scrape real estate listings from Zillow with advanced filters
     
     Args:
         location (str): City, state or zip code
         max_listings (int): Maximum number of listings to scrape
+        min_price (int): Minimum price filter
+        max_price (int): Maximum price filter
+        min_beds (int): Minimum number of bedrooms
+        min_baths (int): Minimum number of bathrooms
+        property_types (list): List of property types to include
+        new_listings (bool): Whether to only show listings from the last 7 days
+        include_sold (bool): Whether to include recently sold properties
+        include_pending (bool): Whether to include pending/contingent listings
         
     Returns:
         pandas.DataFrame: DataFrame containing the scraped listings
     """
     # Format the location for the URL
     formatted_location = quote_plus(location)
-    url = f"https://www.zillow.com/homes/for_sale/{formatted_location}_rb/"
+    
+    # Build URL with filters
+    url = f"https://www.zillow.com/homes/"
+    
+    # Add status filters (for sale, sold, etc.)
+    status_filters = ["for_sale"]
+    if include_sold:
+        status_filters.append("recently_sold")
+    if include_pending:
+        status_filters.append("pending")
+    
+    status_part = "-".join(status_filters)
+    url += f"{status_part}/"
+    
+    # Add location
+    url += f"{formatted_location}/"
+    
+    # Start building query parameters
+    params = []
+    
+    # Add price range filter
+    if min_price > 0 or max_price is not None:
+        price_filter = f"price_{min_price}"
+        if max_price is not None:
+            price_filter += f"-{max_price}"
+        else:
+            price_filter += "-na"
+        params.append(price_filter)
+    
+    # Add bedrooms filter
+    if min_beds > 0:
+        params.append(f"{min_beds}-_beds")
+    
+    # Add bathrooms filter
+    if min_baths > 0:
+        params.append(f"{min_baths}-_baths")
+    
+    # Add property type filter
+    if property_types and len(property_types) > 0:
+        # Map our property types to Zillow's
+        zillow_property_map = {
+            "House": "house",
+            "Condo": "condo,apartment",
+            "Townhouse": "townhouse",
+            "Multi-Family": "multi_family",
+            "Apartment": "apartment",
+            "Land": "land",
+            "Commercial": "commercial"
+        }
+        
+        # Get Zillow property type codes
+        property_codes = []
+        for prop in property_types:
+            if prop in zillow_property_map:
+                property_codes.append(zillow_property_map[prop])
+        
+        if property_codes:
+            params.append(f"type_{','.join(property_codes)}")
+    
+    # Add new listings filter (last 7 days)
+    if new_listings:
+        params.append("days_7")
+    
+    # Combine parameters
+    if params:
+        url += f"{'/'.join(params)}/"
+    
+    # Add trailing parts
+    url += "_rb/"
     
     try:
         response = handle_request(url)
@@ -168,20 +246,88 @@ def scrape_zillow(location, max_listings=20):
     except Exception as e:
         raise Exception(f"Failed to scrape Zillow: {str(e)}")
 
-def scrape_realtor(location, max_listings=20):
+def scrape_realtor(location, max_listings=20, min_price=0, max_price=None, min_beds=0, 
+               min_baths=0, property_types=None, new_listings=False, include_sold=False, 
+               include_pending=True):
     """
-    Scrape real estate listings from Realtor.com
+    Scrape real estate listings from Realtor.com with advanced filters
     
     Args:
         location (str): City, state or zip code
         max_listings (int): Maximum number of listings to scrape
+        min_price (int): Minimum price filter
+        max_price (int): Maximum price filter
+        min_beds (int): Minimum number of bedrooms
+        min_baths (int): Minimum number of bathrooms
+        property_types (list): List of property types to include
+        new_listings (bool): Whether to only show listings from the last 7 days
+        include_sold (bool): Whether to include recently sold properties
+        include_pending (bool): Whether to include pending/contingent listings
         
     Returns:
         pandas.DataFrame: DataFrame containing the scraped listings
     """
     # Format the location for the URL
     formatted_location = quote_plus(location)
-    url = f"https://www.realtor.com/realestateandhomes-search/{formatted_location}"
+    
+    # Build URL with filters
+    base_url = "https://www.realtor.com/realestateandhomes-search/"
+    url = base_url + formatted_location
+    
+    # Add query parameters
+    params = []
+    
+    # Property status filter
+    if include_sold and not include_pending:
+        params.append(("prop_status", "recently_sold"))
+    elif include_pending and not include_sold:
+        params.append(("prop_status", "pending"))
+    elif include_sold and include_pending:
+        params.append(("prop_status", "recently_sold,pending,active"))
+    
+    # Price range filter
+    if min_price > 0:
+        params.append(("price_min", str(min_price)))
+    if max_price is not None:
+        params.append(("price_max", str(max_price)))
+    
+    # Bedrooms filter
+    if min_beds > 0:
+        params.append(("beds_min", str(min_beds)))
+    
+    # Bathrooms filter
+    if min_baths > 0:
+        params.append(("baths_min", str(min_baths)))
+    
+    # Property type filter
+    if property_types and len(property_types) > 0:
+        # Map our property types to Realtor.com's
+        realtor_property_map = {
+            "House": "single_family",
+            "Condo": "condo",
+            "Townhouse": "townhome",
+            "Multi-Family": "multi_family",
+            "Land": "land",
+            "Commercial": "commercial"
+        }
+        
+        # Get Realtor property type codes
+        property_codes = []
+        for prop in property_types:
+            if prop in realtor_property_map:
+                property_codes.append(realtor_property_map[prop])
+        
+        if property_codes:
+            params.append(("prop_type", ",".join(property_codes)))
+    
+    # New listings filter (last 7 days)
+    if new_listings:
+        params.append(("age", "7"))
+    
+    # Add query parameters to URL
+    if params:
+        query_string = "&".join([f"{k}={v}" for k, v in params])
+        url = f"{url}?{query_string}"
     
     try:
         response = handle_request(url)
@@ -349,20 +495,94 @@ def generate_sample_data(location, num_listings=10, source="Sample"):
     
     return pd.DataFrame(data)
 
-def scrape_trulia(location, max_listings=20):
+def scrape_trulia(location, max_listings=20, min_price=0, max_price=None, min_beds=0, 
+               min_baths=0, property_types=None, new_listings=False, include_sold=False, 
+               include_pending=True):
     """
-    Scrape real estate listings from Trulia
+    Scrape real estate listings from Trulia with advanced filters
     
     Args:
         location (str): City, state or zip code
         max_listings (int): Maximum number of listings to scrape
+        min_price (int): Minimum price filter
+        max_price (int): Maximum price filter
+        min_beds (int): Minimum number of bedrooms
+        min_baths (int): Minimum number of bathrooms
+        property_types (list): List of property types to include
+        new_listings (bool): Whether to only show listings from the last 7 days
+        include_sold (bool): Whether to include recently sold properties
+        include_pending (bool): Whether to include pending/contingent listings
         
     Returns:
         pandas.DataFrame: DataFrame containing the scraped listings
     """
     # Format the location for the URL
     formatted_location = quote_plus(location)
-    url = f"https://www.trulia.com/for_sale/{formatted_location}/SINGLE-FAMILY_HOME,TOWNHOUSE_type/"
+    
+    # Base URL with property status
+    url_type = "for_sale"
+    if include_sold and not include_pending:
+        url_type = "sold"
+    elif include_pending and not include_sold:
+        url_type = "sold_pending"
+    
+    # Start building the URL
+    url = f"https://www.trulia.com/{url_type}/{formatted_location}/"
+    
+    # Add property type filters
+    property_type_string = ""
+    
+    if property_types and len(property_types) > 0:
+        # Map our property types to Trulia's format
+        trulia_property_map = {
+            "House": "SINGLE-FAMILY_HOME",
+            "Condo": "CONDO",
+            "Townhouse": "TOWNHOUSE",
+            "Multi-Family": "MULTI-FAMILY",
+            "Land": "LAND",
+            "Commercial": "COMMERCIAL",
+            "Apartment": "APARTMENT"
+        }
+        
+        # Get Trulia property type codes
+        property_codes = []
+        for prop in property_types:
+            if prop in trulia_property_map:
+                property_codes.append(trulia_property_map[prop])
+        
+        if property_codes:
+            property_type_string = ",".join(property_codes) + "_type/"
+    else:
+        # Default to common property types
+        property_type_string = "SINGLE-FAMILY_HOME,TOWNHOUSE,CONDO_type/"
+    
+    # Add property types to URL
+    url += property_type_string
+    
+    # Build query parameters for additional filters
+    params = []
+    
+    # Price range filter
+    if min_price > 0:
+        params.append(f"price_min={min_price}")
+    if max_price is not None:
+        params.append(f"price_max={max_price}")
+    
+    # Bedroom filter
+    if min_beds > 0:
+        params.append(f"beds_min={min_beds}")
+    
+    # Bathroom filter
+    if min_baths > 0:
+        params.append(f"baths_min={min_baths}")
+    
+    # New listings filter
+    if new_listings:
+        params.append("market=new-listings")
+    
+    # Add query parameters to URL
+    if params:
+        url += "?" + "&".join(params)
     
     try:
         response = handle_request(url)
