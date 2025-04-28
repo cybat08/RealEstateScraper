@@ -630,7 +630,8 @@ with tab5:
         selected_idx = st.number_input("Enter row number of property to analyze", 
                                        min_value=0, 
                                        max_value=len(st.session_state.properties_df)-1 if len(st.session_state.properties_df) > 0 else 0,
-                                       value=0)
+                                       value=0,
+                                       key="property_row_selector")
         
         # Get the selected property
         selected_property = st.session_state.properties_df.iloc[selected_idx] if not st.session_state.properties_df.empty else None
@@ -662,7 +663,8 @@ with tab5:
                                             max_value=15.0, 
                                             value=default_yield,
                                             step=0.1,
-                                            format="%.1f")
+                                            format="%.1f",
+                                            key="rental_yield_input")
                 
                 st.caption(f"Estimated rental yield for this property is {default_yield:.1f}%")
             
@@ -673,7 +675,8 @@ with tab5:
                                                 max_value=10.0, 
                                                 value=default_appreciation,
                                                 step=0.1,
-                                                format="%.1f")
+                                                format="%.1f",
+                                                key="appreciation_rate_input")
                 
                 st.caption(f"Estimated appreciation rate for this area is {default_appreciation:.1f}%")
             
@@ -683,14 +686,16 @@ with tab5:
                 down_payment_pct = st.slider("Down Payment (%)", 
                                             min_value=5, 
                                             max_value=100, 
-                                            value=20)
+                                            value=20,
+                                            key="down_payment_slider")
             
             with col2:
                 interest_rate = st.slider("Mortgage Interest Rate (%)", 
                                         min_value=2.0, 
                                         max_value=10.0, 
                                         value=6.5,
-                                        step=0.1)
+                                        step=0.1,
+                                        key="interest_rate_slider")
             
             # Calculate ROI
             if st.button("Calculate ROI", key="calculate_roi_button"):
@@ -794,9 +799,9 @@ with tab6:
     
     with col1:
         # URL input and scraping controls
-        url = st.text_input("Website URL", "https://www.example.com")
-        max_links = st.slider("Maximum number of links to extract", 10, 500, 100)
-        same_domain_only = st.checkbox("Only links from same domain", value=True)
+        url = st.text_input("Website URL", "https://www.example.com", key="link_scraper_url_input")
+        max_links = st.slider("Maximum number of links to extract", 10, 500, 100, key="max_links_slider")
+        same_domain_only = st.checkbox("Only links from same domain", value=True, key="same_domain_checkbox")
         
         # Optional pattern filter
         link_pattern = st.text_input("Filter links by pattern (regex, optional)", "")
@@ -851,7 +856,7 @@ with tab6:
         
         # Filter options
         st.subheader("Filter Links")
-        filter_text = st.text_input("Filter by text contained in URL or title")
+        filter_text = st.text_input("Filter by text contained in URL or title", key="link_filter_text_input")
         
         filtered_links_df = st.session_state.links_df
         if filter_text:
@@ -892,7 +897,8 @@ with tab7:
     credentials_json = st.text_area(
         "Google API Credentials (JSON)",
         placeholder="Paste your Google Service Account credentials JSON here",
-        height=150
+        height=150,
+        key="google_credentials_input"
     )
     
     # Create columns for data source selection and export options
@@ -903,7 +909,8 @@ with tab7:
         data_source = st.radio(
             "Select data to export",
             ["Real Estate Listings", "Scraped Links"],
-            disabled=st.session_state.properties_df.empty and st.session_state.links_df.empty
+            disabled=st.session_state.properties_df.empty and st.session_state.links_df.empty,
+            key="export_data_source_radio"
         )
         
         # Show a preview of the selected data
