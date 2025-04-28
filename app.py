@@ -2,10 +2,14 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import time
+import json
+import os
 from scraper import scrape_zillow, scrape_realtor, scrape_trulia
 from data_processor import filter_properties, get_statistics
 from utils import get_unique_values, format_price, display_property_card
 from web_content import extract_property_details
+from link_scraper import scrape_links, extract_specific_links
+from sheets_exporter import export_dataframe_to_sheet, list_available_spreadsheets
 
 # Configure the page
 # Try to use our custom icon if possible, otherwise use a house emoji as fallback
@@ -38,8 +42,21 @@ if 'selected_property' not in st.session_state:
 # Title and description
 st.title("🏠 Real Estate Listings Scraper")
 st.markdown("""
-This app scrapes real estate listings from popular websites and allows you to filter and analyze the results.
+This app scrapes real estate listings and web links from popular websites and allows you to filter, analyze, and export the results including to Google Sheets.
 """)
+
+# Initialize additional session state variables
+if 'links_df' not in st.session_state:
+    st.session_state.links_df = pd.DataFrame()
+
+if 'links_scrape_status' not in st.session_state:
+    st.session_state.links_scrape_status = ""
+
+if 'google_credentials' not in st.session_state:
+    st.session_state.google_credentials = None
+
+# Create tabs for different functionality
+tab1, tab2, tab3 = st.tabs(["Real Estate Scraper", "Link Scraper", "Google Sheets Export"])
 
 # Sidebar for scraping controls
 st.sidebar.header("Scraper Controls")
@@ -122,198 +139,387 @@ if scrape_button:
         # Rerun to refresh the page with new data
         st.rerun()
 
-# Display the last scrape status
-if st.session_state.scrape_status:
-    st.info(st.session_state.scrape_status)
+# Display content in tabs
+with tab1:  # Real Estate Scraper tab
+    # Display the last scrape status
+    if st.session_state.scrape_status:
+        st.info(st.session_state.scrape_status)
 
-# Handle property details view
-if st.session_state.selected_property:
-    # Create a modal-like experience with a container
-    with st.container():
-        st.subheader("Property Details")
-        
-        # Create a button to close the modal
-        if st.button("× Close Details"):
-            st.session_state.selected_property = None
-            st.rerun()
-        
-        # Display property information
-        property_data = st.session_state.selected_property['data']
-        property_link = st.session_state.selected_property['link']
-        
-        # Display basic property information
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown(f"**Address:** {property_data['address']}")
-            st.markdown(f"**Price:** {format_price(property_data['price'])}")
-            st.markdown(f"**Property Type:** {property_data['property_type']}")
+    # Handle property details view
+    if st.session_state.selected_property:
+        # Create a modal-like experience with a container
+        with st.container():
+            st.subheader("Property Details")
             
-        with col2:
-            st.markdown(f"**Bedrooms:** {property_data['bedrooms']}")
-            st.markdown(f"**Bathrooms:** {property_data['bathrooms']}")
-            st.markdown(f"**Square Feet:** {property_data['square_feet']}")
+            # Create a button to close the modal
+            if st.button("× Close Details"):
+                st.session_state.selected_property = None
+                st.rerun()
             
-        # Get detailed content using trafilatura
-        st.subheader("Additional Information")
-        with st.spinner("Loading detailed property information..."):
-            try:
-                details = extract_property_details(property_link)
-                if "error" not in details:
-                    # Show a sample of the description (first 1000 chars)
-                    description = details["full_description"]
-                    if description:
-                        st.markdown("**Property Description:**")
-                        st.write(description[:1000] + ("..." if len(description) > 1000 else ""))
+            # Display property information
+            property_data = st.session_state.selected_property['data']
+            property_link = st.session_state.selected_property['link']
+        
+            # Display basic property information
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown(f"**Address:** {property_data['address']}")
+                st.markdown(f"**Price:** {format_price(property_data['price'])}")
+                st.markdown(f"**Property Type:** {property_data['property_type']}")
+                
+            with col2:
+                st.markdown(f"**Bedrooms:** {property_data['bedrooms']}")
+                st.markdown(f"**Bathrooms:** {property_data['bathrooms']}")
+                st.markdown(f"**Square Feet:** {property_data['square_feet']}")
+            
+            # Get detailed content using trafilatura
+            st.subheader("Additional Information")
+            with st.spinner("Loading detailed property information..."):
+                try:
+                    details = extract_property_details(property_link)
+                    if "error" not in details:
+                        # Show a sample of the description (first 1000 chars)
+                        description = details["full_description"]
+                        if description:
+                            st.markdown("**Property Description:**")
+                            st.write(description[:1000] + ("..." if len(description) > 1000 else ""))
+                        else:
+                            st.info("No detailed description available.")
                     else:
-                        st.info("No detailed description available.")
-                else:
-                    st.warning("Could not retrieve detailed information for this property.")
-            except Exception as e:
-                st.error(f"Error retrieving property details: {str(e)}")
-        
-        # Link to the original listing
-        st.markdown(f"[View Full Listing on {property_data['source']}]({property_link})")
+                        st.warning("Could not retrieve detailed information for this property.")
+                except Exception as e:
+                    st.error(f"Error retrieving property details: {str(e)}")
+            
+            # Link to the original listing
+            st.markdown(f"[View Full Listing on {property_data['source']}]({property_link})")
 
-# Filtering section (only show if we have data)
-if not st.session_state.properties_df.empty:
-    st.header("Filter Listings")
+    # Filtering section (only show if we have data)
+    if not st.session_state.properties_df.empty:
+        st.header("Filter Listings")
     
-    col1, col2, col3 = st.columns(3)
-    
-    # Get unique values for filters
-    unique_sources = get_unique_values(st.session_state.properties_df, 'source')
-    unique_cities = get_unique_values(st.session_state.properties_df, 'city')
-    unique_property_types = get_unique_values(st.session_state.properties_df, 'property_type')
-    
-    # Price range filter
-    min_price = int(st.session_state.properties_df['price'].min()) if not st.session_state.properties_df.empty else 0
-    max_price = int(st.session_state.properties_df['price'].max()) if not st.session_state.properties_df.empty else 1000000
-    
-    with col1:
-        price_range = st.slider(
-            "Price Range ($)",
-            min_price,
-            max_price,
-            (min_price, max_price)
+        col1, col2, col3 = st.columns(3)
+        
+        # Get unique values for filters
+        unique_sources = get_unique_values(st.session_state.properties_df, 'source')
+        unique_cities = get_unique_values(st.session_state.properties_df, 'city')
+        unique_property_types = get_unique_values(st.session_state.properties_df, 'property_type')
+        
+        # Price range filter
+        min_price = int(st.session_state.properties_df['price'].min()) if not st.session_state.properties_df.empty else 0
+        max_price = int(st.session_state.properties_df['price'].max()) if not st.session_state.properties_df.empty else 1000000
+        
+        with col1:
+            price_range = st.slider(
+                "Price Range ($)",
+                min_price,
+                max_price,
+                (min_price, max_price)
+            )
+        
+        # Bedrooms and bathrooms filters
+        with col2:
+            min_beds = st.number_input("Minimum Bedrooms", 0, 10, 0)
+            min_baths = st.number_input("Minimum Bathrooms", 0, 10, 0)
+        
+        # Additional filters
+        with col3:
+            selected_sources = st.multiselect("Sources", unique_sources, default=unique_sources)
+            selected_cities = st.multiselect("Cities", unique_cities, default=unique_cities)
+            selected_property_types = st.multiselect("Property Types", unique_property_types, default=unique_property_types)
+        
+        # Apply filters
+        filtered_df = filter_properties(
+            st.session_state.properties_df,
+            price_range,
+            min_beds,
+            min_baths,
+            selected_sources,
+            selected_cities,
+            selected_property_types
         )
     
-    # Bedrooms and bathrooms filters
-    with col2:
-        min_beds = st.number_input("Minimum Bedrooms", 0, 10, 0)
-        min_baths = st.number_input("Minimum Bathrooms", 0, 10, 0)
-    
-    # Additional filters
-    with col3:
-        selected_sources = st.multiselect("Sources", unique_sources, default=unique_sources)
-        selected_cities = st.multiselect("Cities", unique_cities, default=unique_cities)
-        selected_property_types = st.multiselect("Property Types", unique_property_types, default=unique_property_types)
-    
-    # Apply filters
-    filtered_df = filter_properties(
-        st.session_state.properties_df,
-        price_range,
-        min_beds,
-        min_baths,
-        selected_sources,
-        selected_cities,
-        selected_property_types
-    )
-    
-    # Display statistics
-    if not filtered_df.empty:
-        st.header("Statistics")
-        stats_df = get_statistics(filtered_df)
+        # Display statistics
+        if not filtered_df.empty:
+            st.header("Statistics")
+            stats_df = get_statistics(filtered_df)
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Price distribution histogram
+                fig = px.histogram(
+                    filtered_df,
+                    x="price",
+                    nbins=20,
+                    title="Price Distribution",
+                    labels={"price": "Price ($)", "count": "Number of Listings"}
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                # Bedrooms vs Price scatter plot
+                fig = px.scatter(
+                    filtered_df,
+                    x="bedrooms",
+                    y="price",
+                    color="source",
+                    title="Bedrooms vs Price",
+                    labels={"bedrooms": "Bedrooms", "price": "Price ($)"}
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # Display statistics table
+            st.subheader("Summary Statistics")
+            st.dataframe(stats_df, use_container_width=True)
+        
+        # Display results
+        st.header(f"Results ({len(filtered_df)} listings)")
+        
+        if filtered_df.empty:
+            st.warning("No properties match your filters. Try adjusting your criteria.")
+        else:
+            # Sort options
+            sort_by = st.selectbox(
+                "Sort by",
+                ["Price (Low to High)", "Price (High to Low)", "Bedrooms", "Bathrooms", "Square Feet"]
+            )
+            
+            # Apply sorting
+            if sort_by == "Price (Low to High)":
+                filtered_df = filtered_df.sort_values(by="price")
+            elif sort_by == "Price (High to Low)":
+                filtered_df = filtered_df.sort_values(by="price", ascending=False)
+            elif sort_by == "Bedrooms":
+                filtered_df = filtered_df.sort_values(by="bedrooms", ascending=False)
+            elif sort_by == "Bathrooms":
+                filtered_df = filtered_df.sort_values(by="bathrooms", ascending=False)
+            elif sort_by == "Square Feet":
+                filtered_df = filtered_df.sort_values(by="square_feet", ascending=False)
+            
+            # Display property cards in a grid (3 per row)
+            cols = st.columns(3)
+            for i, (_, property_row) in enumerate(filtered_df.iterrows()):
+                with cols[i % 3]:
+                    display_property_card(property_row)
+            
+            # Option to download results as CSV
+            st.download_button(
+                label="Download Results as CSV",
+                data=filtered_df.to_csv(index=False),
+                file_name="real_estate_listings.csv",
+                mime="text/csv"
+            )
+    else:
+        # Initial state or no data available
+        st.info("Use the sidebar controls to scrape real estate listings.")
+        
+        # Show a sample of what the app can do
+        st.header("How to use this app")
         
         col1, col2 = st.columns(2)
         
         with col1:
-            # Price distribution histogram
-            fig = px.histogram(
-                filtered_df,
-                x="price",
-                nbins=20,
-                title="Price Distribution",
-                labels={"price": "Price ($)", "count": "Number of Listings"}
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            st.subheader("1. Select websites and location")
+            st.markdown("""
+            - Choose one or more real estate websites to scrape
+            - Enter a location (city, state, or zip code)
+            - Set the maximum number of listings to retrieve
+            - Click "Scrape Listings" to start
+            """)
         
         with col2:
-            # Bedrooms vs Price scatter plot
-            fig = px.scatter(
-                filtered_df,
-                x="bedrooms",
-                y="price",
-                color="source",
-                title="Bedrooms vs Price",
-                labels={"bedrooms": "Bedrooms", "price": "Price ($)"}
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        
-        # Display statistics table
-        st.subheader("Summary Statistics")
-        st.dataframe(stats_df, use_container_width=True)
-    
-    # Display results
-    st.header(f"Results ({len(filtered_df)} listings)")
-    
-    if filtered_df.empty:
-        st.warning("No properties match your filters. Try adjusting your criteria.")
-    else:
-        # Sort options
-        sort_by = st.selectbox(
-            "Sort by",
-            ["Price (Low to High)", "Price (High to Low)", "Bedrooms", "Bathrooms", "Square Feet"]
-        )
-        
-        # Apply sorting
-        if sort_by == "Price (Low to High)":
-            filtered_df = filtered_df.sort_values(by="price")
-        elif sort_by == "Price (High to Low)":
-            filtered_df = filtered_df.sort_values(by="price", ascending=False)
-        elif sort_by == "Bedrooms":
-            filtered_df = filtered_df.sort_values(by="bedrooms", ascending=False)
-        elif sort_by == "Bathrooms":
-            filtered_df = filtered_df.sort_values(by="bathrooms", ascending=False)
-        elif sort_by == "Square Feet":
-            filtered_df = filtered_df.sort_values(by="square_feet", ascending=False)
-        
-        # Display property cards in a grid (3 per row)
-        cols = st.columns(3)
-        for i, (_, property_row) in enumerate(filtered_df.iterrows()):
-            with cols[i % 3]:
-                display_property_card(property_row)
-        
-        # Option to download results as CSV
-        st.download_button(
-            label="Download Results as CSV",
-            data=filtered_df.to_csv(index=False),
-            file_name="real_estate_listings.csv",
-            mime="text/csv"
-        )
-else:
-    # Initial state or no data available
-    st.info("Use the sidebar controls to scrape real estate listings.")
-    
-    # Show a sample of what the app can do
-    st.header("How to use this app")
+            st.subheader("2. Filter and analyze results")
+            st.markdown("""
+            - Filter listings by price, bedrooms, bathrooms, etc.
+            - View statistics and visualizations
+            - Sort results by various criteria
+            - Download the data as a CSV file
+            """)
+            
+# Tab 2: Link Scraper
+with tab2:
+    st.header("Website Link Scraper")
+    st.markdown("This tool allows you to extract links from any website for further analysis.")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("1. Select websites and location")
+        # URL input and scraping controls
+        url = st.text_input("Website URL", "https://www.example.com")
+        max_links = st.slider("Maximum number of links to extract", 10, 500, 100)
+        same_domain_only = st.checkbox("Only links from same domain", value=True)
+        
+        # Optional pattern filter
+        link_pattern = st.text_input("Filter links by pattern (regex, optional)", "")
+        
+        # CSS selector for specific links
+        use_css_selector = st.checkbox("Use CSS selector to find specific links", value=False)
+        css_selector = st.text_input("CSS Selector (e.g., 'a.listing-link')", "", disabled=not use_css_selector)
+        
+    with col2:
+        # Add some helpful information
+        st.subheader("Tips")
         st.markdown("""
-        - Choose one or more real estate websites to scrape
-        - Enter a location (city, state, or zip code)
-        - Set the maximum number of listings to retrieve
-        - Click "Scrape Listings" to start
+        - Enter a complete URL including 'https://'
+        - CSS selectors are useful for targeting specific types of links
+        - Examples:
+            - `a.product-link` - links with class 'product-link'
+            - `.listings a` - links inside elements with class 'listings'
+            - `#main-content a` - links inside element with ID 'main-content'
         """)
     
+    # Scrape button
+    scrape_links_button = st.button("Scrape Links")
+    
+    if scrape_links_button:
+        if not url:
+            st.error("Please enter a valid URL")
+        else:
+            with st.spinner("Scraping links... This may take a moment"):
+                try:
+                    if use_css_selector and css_selector:
+                        st.session_state.links_df = extract_specific_links(
+                            url, css_selector, max_links, link_pattern
+                        )
+                    else:
+                        st.session_state.links_df = scrape_links(
+                            url, max_links, link_pattern, same_domain_only
+                        )
+                    
+                    st.session_state.links_scrape_status = f"Successfully scraped {len(st.session_state.links_df)} links"
+                    st.success(f"Successfully scraped {len(st.session_state.links_df)} links!")
+                except Exception as e:
+                    st.error(f"Error scraping links: {str(e)}")
+                    st.session_state.links_scrape_status = f"Error: {str(e)}"
+    
+    # Display the last scrape status
+    if st.session_state.links_scrape_status:
+        st.info(st.session_state.links_scrape_status)
+    
+    # Display results if available
+    if not st.session_state.links_df.empty:
+        st.header("Results")
+        
+        # Filter options
+        st.subheader("Filter Links")
+        filter_text = st.text_input("Filter by text contained in URL or title")
+        
+        filtered_links_df = st.session_state.links_df
+        if filter_text:
+            mask = (
+                filtered_links_df['url'].str.contains(filter_text, case=False, na=False) | 
+                filtered_links_df['title'].str.contains(filter_text, case=False, na=False)
+            )
+            filtered_links_df = filtered_links_df[mask]
+        
+        # Display the dataframe
+        st.dataframe(filtered_links_df, use_container_width=True)
+        
+        # Download options
+        st.download_button(
+            label="Download as CSV",
+            data=filtered_links_df.to_csv(index=False),
+            file_name="scraped_links.csv",
+            mime="text/csv"
+        )
+        
+        # Export to Google Sheets button
+        if st.button("Export to Google Sheets"):
+            st.markdown("""
+            **Google Sheets Integration**
+            
+            To export data to Google Sheets, you need to provide Google API credentials.
+            """)
+            
+            # We'll implement this in the Google Sheets tab
+
+# Tab 3: Google Sheets Export
+with tab3:
+    st.header("Google Sheets Export")
+    st.markdown("Export your scraped data to Google Sheets for easier sharing and collaboration.")
+    
+    # Set up the credentials
+    credentials_json = st.text_area(
+        "Google API Credentials (JSON)",
+        placeholder="Paste your Google Service Account credentials JSON here",
+        height=150
+    )
+    
+    # Create columns for data source selection and export options
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Data Source")
+        data_source = st.radio(
+            "Select data to export",
+            ["Real Estate Listings", "Scraped Links"],
+            disabled=st.session_state.properties_df.empty and st.session_state.links_df.empty
+        )
+        
+        # Show a preview of the selected data
+        if data_source == "Real Estate Listings" and not st.session_state.properties_df.empty:
+            st.write("Preview (first 5 rows):")
+            st.dataframe(st.session_state.properties_df.head(5), use_container_width=True)
+        elif data_source == "Scraped Links" and not st.session_state.links_df.empty:
+            st.write("Preview (first 5 rows):")
+            st.dataframe(st.session_state.links_df.head(5), use_container_width=True)
+        else:
+            st.info("No data available for the selected source. Please use the scrapers first.")
+            
     with col2:
-        st.subheader("2. Filter and analyze results")
-        st.markdown("""
-        - Filter listings by price, bedrooms, bathrooms, etc.
-        - View statistics and visualizations
-        - Sort results by various criteria
-        - Download the data as a CSV file
-        """)
+        st.subheader("Export Options")
+        
+        # Spreadsheet options
+        new_spreadsheet = st.checkbox("Create new spreadsheet", value=True)
+        
+        if new_spreadsheet:
+            spreadsheet_name = st.text_input("New spreadsheet name", "Real Estate Data")
+            spreadsheet_id = None
+        else:
+            # Would provide a dropdown of existing spreadsheets here
+            spreadsheet_id = st.text_input("Existing spreadsheet ID")
+            spreadsheet_name = None
+        
+        worksheet_name = st.text_input("Worksheet name", "Data")
+        append_data = st.checkbox("Append to existing data in worksheet", value=False)
+    
+    # Export button
+    export_button = st.button(
+        "Export to Google Sheets",
+        disabled=(
+            st.session_state.properties_df.empty and st.session_state.links_df.empty
+            or not credentials_json
+            or (not new_spreadsheet and not spreadsheet_id)
+        )
+    )
+    
+    if export_button:
+        with st.spinner("Exporting to Google Sheets..."):
+            try:
+                # Select the correct dataframe based on user choice
+                if data_source == "Real Estate Listings":
+                    export_df = st.session_state.properties_df
+                else:  # Scraped Links
+                    export_df = st.session_state.links_df
+                
+                # Call the export function
+                result = export_dataframe_to_sheet(
+                    export_df,
+                    credentials_json=credentials_json,
+                    spreadsheet_name=spreadsheet_name,
+                    spreadsheet_id=spreadsheet_id,
+                    worksheet_name=worksheet_name,
+                    append=append_data
+                )
+                
+                if "error" not in result:
+                    st.success("Data successfully exported to Google Sheets!")
+                    st.markdown(f"[Open Spreadsheet]({result['spreadsheet_url']})")
+                    
+                    # Save the credentials for future use
+                    st.session_state.google_credentials = credentials_json
+                else:
+                    st.error(f"Export failed: {result['error']}")
+            except Exception as e:
+                st.error(f"Error during export: {str(e)}")
