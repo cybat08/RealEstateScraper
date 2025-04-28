@@ -387,7 +387,8 @@ with tab1:  # Real Estate Scraper tab
                     "Minimum Bedrooms",
                     min_value=0,
                     max_value=10,
-                    value=0
+                    value=0,
+                    key="min_beds_filter"
                 )
                 
             with col2:
@@ -396,14 +397,16 @@ with tab1:  # Real Estate Scraper tab
                     "Minimum Bathrooms",
                     min_value=0,
                     max_value=10,
-                    value=0
+                    value=0,
+                    key="min_baths_filter"
                 )
                 
                 # Property type filter
                 property_types = st.multiselect(
                     "Property Types",
                     options=get_unique_values(st.session_state.properties_df, 'property_type'),
-                    default=get_unique_values(st.session_state.properties_df, 'property_type')
+                    default=get_unique_values(st.session_state.properties_df, 'property_type'),
+                    key="property_types_filter"
                 )
                 
             with col3:
@@ -411,14 +414,16 @@ with tab1:  # Real Estate Scraper tab
                 sources = st.multiselect(
                     "Sources",
                     options=get_unique_values(st.session_state.properties_df, 'source'),
-                    default=get_unique_values(st.session_state.properties_df, 'source')
+                    default=get_unique_values(st.session_state.properties_df, 'source'),
+                    key="sources_filter"
                 )
                 
                 # City filter
                 cities = st.multiselect(
                     "Cities",
                     options=get_unique_values(st.session_state.properties_df, 'city'),
-                    default=get_unique_values(st.session_state.properties_df, 'city')
+                    default=get_unique_values(st.session_state.properties_df, 'city'),
+                    key="cities_filter"
                 )
             
             # Apply filters
@@ -458,7 +463,8 @@ with tab1:  # Real Estate Scraper tab
                     sort_by = st.selectbox(
                         "Sort By",
                         ["price", "bedrooms", "bathrooms", "square_feet", "data_quality_score"],
-                        index=0
+                        index=0,
+                        key="sort_by_option"
                     )
                 
                 with order_col:
@@ -466,7 +472,8 @@ with tab1:  # Real Estate Scraper tab
                         "Order",
                         ["Ascending", "Descending"],
                         index=1,
-                        horizontal=True
+                        horizontal=True,
+                        key="sort_order_option"
                     )
                 
                 is_ascending = sort_order == "Ascending"
@@ -611,16 +618,17 @@ with tab4:
         # Create a form for ROI analysis
         with st.form(key="roi_form"):
             # Basic property information
-            property_price = st.number_input("Property Price ($)", min_value=1000, value=500000, step=5000)
-            bedrooms = st.number_input("Bedrooms", min_value=0, max_value=10, value=3)
-            bathrooms = st.number_input("Bathrooms", min_value=0.0, max_value=10.0, value=2.0, step=0.5)
-            square_feet = st.number_input("Square Feet", min_value=100, value=1800, step=100)
+            property_price = st.number_input("Property Price ($)", min_value=1000, value=500000, step=5000, key="roi_property_price")
+            bedrooms = st.number_input("Bedrooms", min_value=0, max_value=10, value=3, key="roi_bedrooms")
+            bathrooms = st.number_input("Bathrooms", min_value=0.0, max_value=10.0, value=2.0, step=0.5, key="roi_bathrooms")
+            square_feet = st.number_input("Square Feet", min_value=100, value=1800, step=100, key="roi_square_feet")
             property_type = st.selectbox(
                 "Property Type",
                 ["House", "Condo", "Townhouse", "Multi-Family", "Apartment", "Land", "Commercial"],
-                index=0
+                index=0,
+                key="roi_property_type"
             )
-            property_age = st.number_input("Property Age (years)", min_value=0, value=20, step=1)
+            property_age = st.number_input("Property Age (years)", min_value=0, value=20, step=1, key="roi_property_age")
             
             # Location quality (proxy for appreciation potential)
             location_rating = st.slider(
@@ -628,13 +636,14 @@ with tab4:
                 min_value=1,
                 max_value=10,
                 value=7,
-                help="Higher rating indicates better location (schools, amenities, employment opportunities)"
+                help="Higher rating indicates better location (schools, amenities, employment opportunities)",
+                key="roi_location_rating"
             )
             
             st.subheader("Financing Details")
-            down_payment_pct = st.slider("Down Payment (%)", min_value=0, max_value=100, value=20)
-            interest_rate = st.slider("Interest Rate (%)", min_value=1.0, max_value=10.0, value=4.5, step=0.1)
-            loan_term = st.slider("Loan Term (years)", min_value=5, max_value=30, value=30, step=5)
+            down_payment_pct = st.slider("Down Payment (%)", min_value=0, max_value=100, value=20, key="roi_down_payment")
+            interest_rate = st.slider("Interest Rate (%)", min_value=1.0, max_value=10.0, value=4.5, step=0.1, key="roi_interest_rate")
+            loan_term = st.slider("Loan Term (years)", min_value=5, max_value=30, value=30, step=5, key="roi_loan_term")
             
             st.subheader("Income & Expenses")
             monthly_rent_override = st.number_input(
@@ -642,16 +651,17 @@ with tab4:
                 min_value=0, 
                 value=0, 
                 step=100,
-                help="Enter 0 to use an estimated rent based on property characteristics"
+                help="Enter 0 to use an estimated rent based on property characteristics",
+                key="roi_monthly_rent"
             )
             
-            vacancy_rate = st.slider("Vacancy Rate (%)", min_value=0.0, max_value=20.0, value=5.0, step=0.5)
-            property_tax_rate = st.slider("Property Tax Rate (%/year)", min_value=0.0, max_value=5.0, value=1.2, step=0.1)
-            insurance_rate = st.slider("Insurance Rate (%/year)", min_value=0.0, max_value=2.0, value=0.5, step=0.1)
-            maintenance_rate = st.slider("Maintenance (%/year)", min_value=0.0, max_value=5.0, value=1.0, step=0.1)
-            property_mgmt_rate = st.slider("Property Management (%/month)", min_value=0.0, max_value=15.0, value=8.0, step=0.5)
-            utilities = st.number_input("Monthly Utilities ($, if owner-paid)", min_value=0, value=0, step=10)
-            hoa_fees = st.number_input("Monthly HOA Fees ($)", min_value=0, value=0, step=10)
+            vacancy_rate = st.slider("Vacancy Rate (%)", min_value=0.0, max_value=20.0, value=5.0, step=0.5, key="roi_vacancy_rate")
+            property_tax_rate = st.slider("Property Tax Rate (%/year)", min_value=0.0, max_value=5.0, value=1.2, step=0.1, key="roi_property_tax")
+            insurance_rate = st.slider("Insurance Rate (%/year)", min_value=0.0, max_value=2.0, value=0.5, step=0.1, key="roi_insurance")
+            maintenance_rate = st.slider("Maintenance (%/year)", min_value=0.0, max_value=5.0, value=1.0, step=0.1, key="roi_maintenance")
+            property_mgmt_rate = st.slider("Property Management (%/month)", min_value=0.0, max_value=15.0, value=8.0, step=0.5, key="roi_mgmt")
+            utilities = st.number_input("Monthly Utilities ($, if owner-paid)", min_value=0, value=0, step=10, key="roi_utilities")
+            hoa_fees = st.number_input("Monthly HOA Fees ($)", min_value=0, value=0, step=10, key="roi_hoa")
             
             st.subheader("Appreciation & Investment Horizon")
             appreciation_override = st.slider(
@@ -660,10 +670,11 @@ with tab4:
                 max_value=10.0, 
                 value=0.0, 
                 step=0.1,
-                help="Enter 0 to use an estimated appreciation rate based on property characteristics"
+                help="Enter 0 to use an estimated appreciation rate based on property characteristics",
+                key="roi_appreciation"
             )
             
-            investment_horizon = st.slider("Investment Horizon (years)", min_value=1, max_value=30, value=5)
+            investment_horizon = st.slider("Investment Horizon (years)", min_value=1, max_value=30, value=5, key="roi_horizon")
             
             # Submit button
             analyze_button = st.form_submit_button(label="Analyze Investment")
