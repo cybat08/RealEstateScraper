@@ -8,6 +8,7 @@ from folium.plugins import MarkerCluster
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
 import plotly.express as px
+from streamlit_folium import folium_static
 
 def get_unique_values(df, column):
     """

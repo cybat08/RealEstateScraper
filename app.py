@@ -552,8 +552,65 @@ with tab3:
         else:
             st.write("First scrape some listings using the Real Estate Scraper tab")
 
-# Tab 4: ROI Analysis
+# Tab 4: Map View
 with tab4:
+    st.header("Property Map View")
+    st.markdown("""
+    This interactive map shows the locations of all properties in your search results. 
+    Click on a property marker to view details about that property.
+    """)
+    
+    if 'properties_df' in st.session_state and not st.session_state.properties_df.empty:
+        # Get the property dataframe
+        properties_df = st.session_state.properties_df
+        
+        # Display map statistics
+        data_count = len(properties_df)
+        price_avg = properties_df['price'].mean()
+        price_min = properties_df['price'].min()
+        price_max = properties_df['price'].max()
+        
+        # Display summary metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Properties", f"{data_count}")
+        with col2:
+            st.metric("Avg. Price", f"${price_avg:,.0f}")
+        with col3:
+            st.metric("Price Range", f"${price_min:,.0f} - ${price_max:,.0f}")
+        
+        # Show map
+        st.subheader("Property Locations")
+        display_property_map(properties_df)
+        
+        # Explanatory note
+        st.caption("Note: Property locations are approximated based on address geocoding. Click on markers to see property details.")
+        
+        # Offer option to recalculate coordinates
+        if st.button("Refresh Map Coordinates"):
+            with st.spinner("Updating property coordinates..."):
+                # Force recalculate all coordinates
+                updated_df = geocode_properties(properties_df)
+                st.session_state.properties_df = updated_df
+                st.rerun()
+    else:
+        # Show instructions if no properties available
+        st.info("No properties available for mapping")
+        
+        # Information and image about the map feature
+        st.markdown("""
+        To use the map view:
+        1. First scrape property listings using the Real Estate Scraper tab
+        2. The map will automatically display all properties in your search results
+        3. You can click on property markers to see detailed information
+        4. Use the cluster markers to navigate areas with many properties
+        """)
+        
+        # Show a sample image or further instructions
+        st.write("The map will show property markers clustered by location, allowing you to easily identify property hotspots.")
+
+# Tab 5: ROI Analysis
+with tab5:
     st.header("AI-Powered ROI Analysis")
     st.markdown("""
     This tool uses AI to analyze potential Return on Investment (ROI) for real estate properties. 
@@ -727,8 +784,8 @@ with tab4:
             - Long-term appreciation potential
             """)
 
-# Tab 5: Link Scraper
-with tab5:
+# Tab 6: Link Scraper
+with tab6:
     st.header("Website Link Scraper")
     st.markdown("This tool allows you to extract links from any website for further analysis.")
     
@@ -824,8 +881,8 @@ with tab5:
             
             # We'll implement this in the Google Sheets tab
 
-# Tab 6: Google Sheets Export
-with tab6:
+# Tab 7: Google Sheets Export
+with tab7:
     st.header("Google Sheets Export")
     st.markdown("Export your scraped data to Google Sheets for easier sharing and collaboration.")
     
@@ -914,8 +971,8 @@ with tab6:
             except Exception as e:
                 st.error(f"Error during export: {str(e)}")
                 
-# Tab 7: Stock Viewer
-with tab7:
+# Tab 8: Stock Viewer
+with tab8:
     st.header("Stock Market Viewer")
     st.markdown("Monitor stock performance and analyze market trends to inform your real estate investment decisions.")
     
