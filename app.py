@@ -360,8 +360,24 @@ with tab1:  # Real Estate Scraper tab
                 except Exception as e:
                     st.error(f"Error calculating investment metrics: {str(e)}")
             
-            # Display a link to the original listing
-            st.markdown(f"[View Original Listing]({property_link})")
+            # Display a prominent button-like link to the original listing on the source website
+            source = property_data.get('source', 'Source')
+            st.markdown(f"""
+            <div style="margin-top: 20px; margin-bottom: 20px; text-align: center;">
+                <a href="{property_link}" target="_blank" style="
+                    display: inline-block;
+                    background-color: #0366d6;
+                    color: white;
+                    font-weight: bold;
+                    padding: 10px 20px;
+                    border-radius: 5px;
+                    text-decoration: none;
+                    font-size: 16px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    View Original Listing on {source} <span style="font-size: 14px;">↗</span>
+                </a>
+            </div>
+            """, unsafe_allow_html=True)
     else:
         # Display the main property listings
         if not st.session_state.properties_df.empty:

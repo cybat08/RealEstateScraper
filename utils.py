@@ -159,14 +159,25 @@ def display_property_card(property_data, show_compare=True, show_favorite=True):
         details = f"{beds} beds • {baths} baths • {sqft} sqft • {property_data['property_type']}"
         st.markdown(f"<p>{details}</p>", unsafe_allow_html=True)
         
-        # Source with link
+        # Source with link - enhanced to be more prominent
         source = property_data['source']
         link = property_data['link']
         
         if link and link != "N/A":
-            st.markdown(f"<p>Source: <a href='{link}' target='_blank'>{source}</a></p>", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div style="margin-top: 10px; margin-bottom: 10px;">
+                <span style="font-weight: bold;">Found on:</span> 
+                <a href='{link}' target='_blank' style="color: #0366d6; text-decoration: underline; font-weight: bold;">
+                    {source} <span style="font-size: 14px;">↗</span>
+                </a>
+            </div>
+            """, unsafe_allow_html=True)
         else:
-            st.markdown(f"<p>Source: {source}</p>", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div style="margin-top: 10px; margin-bottom: 10px;">
+                <span style="font-weight: bold;">Found on:</span> {source}
+            </div>
+            """, unsafe_allow_html=True)
         
         # Action buttons in columns
         col1, col2, col3 = st.columns(3)
@@ -294,7 +305,7 @@ def create_comparison_table(properties):
     # Select columns for comparison
     comparison_cols = [
         'address', 'price', 'bedrooms', 'bathrooms', 
-        'square_feet', 'property_type', 'source'
+        'square_feet', 'property_type', 'source', 'link'
     ]
     
     # Add optional data quality columns if available
@@ -378,7 +389,31 @@ def display_interactive_comparison(properties_list):
                 delta=f"{prop['bedrooms']} beds, {prop['bathrooms']} baths"
             )
     
+    # Format source column to include links if available
+    if 'link' in comparison_df.columns:
+        # Create clickable links for each property
+        st.markdown("### Properties with Links to Original Listings")
+        for i, row in comparison_df.iterrows():
+            source = row.get('Source', 'Unknown Source')
+            link = row.get('link')
+            address = row.get('Address', f'Property {i+1}')
+            
+            if pd.notna(link) and link != "N/A" and link != "#":
+                st.markdown(f"""
+                <div style="margin-bottom: 8px;">
+                    <strong>Property {i+1}:</strong> {address} - 
+                    <a href="{link}" target="_blank" style="color: #0366d6; text-decoration: underline;">
+                        View on {source} <span style="font-size: 14px;">↗</span>
+                    </a>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        # Remove the link column from the display table
+        if 'link' in comparison_df.columns:
+            comparison_df = comparison_df.drop(columns=['link'])
+    
     # Show the comparison table
+    st.markdown("### Comparison Table")
     st.dataframe(comparison_df, use_container_width=True)
     
     # Display a visual comparison of key metrics
