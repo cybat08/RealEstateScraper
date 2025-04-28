@@ -479,7 +479,11 @@ def handle_outliers(df):
     
     return df
 
-def calculate_roi_metrics(property_data, rental_yield_percent=None, appreciation_rate=None):
+def calculate_roi_metrics(property_data, rental_yield_percent=None, appreciation_rate=None, 
+                down_payment_pct=20, interest_rate=4.5, loan_term_years=30, 
+                vacancy_rate=5.0, property_tax_rate=1.2, insurance_rate=0.5, 
+                maintenance_rate=1.0, property_mgmt_rate=8.0, monthly_utilities=0, 
+                monthly_hoa=0, investment_horizon_years=5):
     """
     Calculate ROI metrics for a real estate property
     
@@ -487,6 +491,17 @@ def calculate_roi_metrics(property_data, rental_yield_percent=None, appreciation
         property_data (pd.Series): Series containing property data
         rental_yield_percent (float, optional): Estimated annual rental yield as percentage
         appreciation_rate (float, optional): Estimated annual appreciation rate as percentage
+        down_payment_pct (float): Down payment percentage
+        interest_rate (float): Annual interest rate percentage
+        loan_term_years (int): Loan term in years
+        vacancy_rate (float): Vacancy rate percentage
+        property_tax_rate (float): Annual property tax rate percentage
+        insurance_rate (float): Annual insurance rate percentage
+        maintenance_rate (float): Annual maintenance rate percentage
+        property_mgmt_rate (float): Monthly property management fee percentage
+        monthly_utilities (float): Monthly utilities cost in dollars
+        monthly_hoa (float): Monthly HOA fees in dollars
+        investment_horizon_years (int): Investment horizon in years
         
     Returns:
         dict: Dictionary containing ROI metrics
@@ -514,15 +529,38 @@ def calculate_roi_metrics(property_data, rental_yield_percent=None, appreciation
     annual_rental_income = (price * rental_yield) / 100
     monthly_rental_income = annual_rental_income / 12
     
-    # Estimate expenses (property tax, insurance, maintenance, vacancy, etc.)
-    # Conservative estimate: 40% of rental income goes to expenses
-    monthly_expenses = monthly_rental_income * 0.4
+    # Calculate expenses based on parameters
+    # Vacancy loss
+    vacancy_loss = monthly_rental_income * (vacancy_rate / 100)
     
-    # Calculate monthly mortgage payment (assuming 20% down, 30 year term, 6.5% interest)
-    down_payment = price * 0.2
+    # Property tax (annual, converted to monthly)
+    monthly_property_tax = (price * (property_tax_rate / 100)) / 12
+    
+    # Insurance (annual, converted to monthly)
+    monthly_insurance = (price * (insurance_rate / 100)) / 12
+    
+    # Maintenance
+    monthly_maintenance = (price * (maintenance_rate / 100)) / 12
+    
+    # Property management fee
+    monthly_management = monthly_rental_income * (property_mgmt_rate / 100)
+    
+    # Total monthly expenses
+    monthly_expenses = (
+        vacancy_loss + 
+        monthly_property_tax + 
+        monthly_insurance + 
+        monthly_maintenance + 
+        monthly_management + 
+        monthly_utilities + 
+        monthly_hoa
+    )
+    
+    # Calculate monthly mortgage payment using provided parameters
+    down_payment = price * (down_payment_pct / 100)
     loan_amount = price - down_payment
-    monthly_interest_rate = 6.5 / 100 / 12
-    loan_term_months = 30 * 12
+    monthly_interest_rate = interest_rate / 100 / 12
+    loan_term_months = loan_term_years * 12
     
     # Calculate mortgage payment using formula: P = L[i(1+i)^n]/[(1+i)^n-1]
     # Where P = payment, L = loan amount, i = monthly interest rate, n = number of payments
@@ -535,14 +573,14 @@ def calculate_roi_metrics(property_data, rental_yield_percent=None, appreciation
     monthly_cash_flow = monthly_rental_income - monthly_expenses - mortgage_payment
     annual_cash_flow = monthly_cash_flow * 12
     
-    # Calculate 5-year metrics
-    five_year_value = price * ((1 + appreciation / 100) ** 5)
-    five_year_appreciation = five_year_value - price
-    five_year_cash_flow = annual_cash_flow * 5
+    # Calculate metrics for the investment horizon
+    future_value = price * ((1 + appreciation / 100) ** investment_horizon_years)
+    total_appreciation = future_value - price
+    total_cash_flow = annual_cash_flow * investment_horizon_years
     
-    # Calculate total 5-year ROI
+    # Calculate total ROI over the investment horizon
     total_investment = down_payment + (monthly_expenses * 12)  # Down payment + first year expenses
-    five_year_roi = (five_year_appreciation + five_year_cash_flow) / total_investment * 100
+    total_roi = (total_appreciation + total_cash_flow) / total_investment * 100
     
     # Determine investment recommendation
     recommendation = ""

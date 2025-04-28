@@ -438,21 +438,62 @@ with tab1:  # Real Estate Scraper tab
                     property_types
                 )
                 
-                # Calculate and display statistics
-                stats_df = get_statistics(filtered_df)
-                
-                # Display statistics in columns
+                # Display statistics directly without using get_statistics
                 stat_cols = st.columns(5)
-                with stat_cols[0]:
-                    st.metric("Total Properties", f"{len(filtered_df)}")
-                with stat_cols[1]:
-                    st.metric("Avg. Price", f"${stats_df['avg_price']:.0f}")
-                with stat_cols[2]:
-                    st.metric("Avg. Price/Sqft", f"${stats_df['avg_price_per_sqft']:.2f}")
-                with stat_cols[3]:
-                    st.metric("Avg. Bedrooms", f"{stats_df['avg_bedrooms']:.1f}")
-                with stat_cols[4]:
-                    st.metric("Avg. Bathrooms", f"{stats_df['avg_bathrooms']:.1f}")
+                
+                # Only calculate statistics if the dataframe is not empty
+                if not filtered_df.empty:
+                    # Total properties
+                    with stat_cols[0]:
+                        st.metric("Total Properties", f"{len(filtered_df)}")
+                    
+                    # Average price
+                    with stat_cols[1]:
+                        avg_price = filtered_df['price'].mean()
+                        st.metric("Avg. Price", f"${avg_price:.0f}")
+                    
+                    # Average price per square foot (if square_feet column exists and has data)
+                    with stat_cols[2]:
+                        if ('square_feet' in filtered_df.columns and 
+                            not filtered_df['square_feet'].isnull().all() and
+                            not (filtered_df['square_feet'] == 0).all()):
+                            # Filter out zero values to avoid division by zero
+                            sqft_df = filtered_df[filtered_df['square_feet'] > 0]
+                            if not sqft_df.empty:
+                                avg_price_sqft = (sqft_df['price'] / sqft_df['square_feet']).mean()
+                                st.metric("Avg. Price/Sqft", f"${avg_price_sqft:.2f}")
+                            else:
+                                st.metric("Avg. Price/Sqft", "N/A")
+                        else:
+                            st.metric("Avg. Price/Sqft", "N/A")
+                    
+                    # Average bedrooms
+                    with stat_cols[3]:
+                        if 'bedrooms' in filtered_df.columns and not filtered_df['bedrooms'].isnull().all():
+                            avg_beds = filtered_df['bedrooms'].mean()
+                            st.metric("Avg. Bedrooms", f"{avg_beds:.1f}")
+                        else:
+                            st.metric("Avg. Bedrooms", "N/A")
+                    
+                    # Average bathrooms
+                    with stat_cols[4]:
+                        if 'bathrooms' in filtered_df.columns and not filtered_df['bathrooms'].isnull().all():
+                            avg_baths = filtered_df['bathrooms'].mean()
+                            st.metric("Avg. Bathrooms", f"{avg_baths:.1f}")
+                        else:
+                            st.metric("Avg. Bathrooms", "N/A")
+                else:
+                    # If filtered_df is empty, show N/A for all metrics
+                    with stat_cols[0]:
+                        st.metric("Total Properties", "0")
+                    with stat_cols[1]:
+                        st.metric("Avg. Price", "N/A")
+                    with stat_cols[2]:
+                        st.metric("Avg. Price/Sqft", "N/A")
+                    with stat_cols[3]:
+                        st.metric("Avg. Bedrooms", "N/A")
+                    with stat_cols[4]:
+                        st.metric("Avg. Bathrooms", "N/A")
                 
                 # Display sorted properties with pagination
                 st.markdown("### Results")
