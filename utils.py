@@ -108,11 +108,25 @@ def display_property_card(property_data, show_compare=True, show_favorite=True):
         
         # Check if property is in favorites
         is_favorite = False
-        if 'favorites' in st.session_state and not property_data.empty:
-            for fav in st.session_state.favorites:
-                if str(fav.values) == str(property_data.values):
-                    is_favorite = True
-                    break
+        if 'favorites' in st.session_state:
+            # Check if property_data is a DataFrame/Series or a dict
+            if hasattr(property_data, 'empty'):
+                # Handle pandas Series/DataFrame
+                if not property_data.empty:
+                    for fav in st.session_state.favorites:
+                        if hasattr(fav, 'values') and hasattr(property_data, 'values'):
+                            if str(fav.values) == str(property_data.values):
+                                is_favorite = True
+                                break
+            elif isinstance(property_data, dict):
+                # Handle dictionary type property data
+                for fav in st.session_state.favorites:
+                    if isinstance(fav, dict) and str(fav) == str(property_data):
+                        is_favorite = True
+                        break
+                    elif hasattr(fav, 'to_dict') and str(fav.to_dict()) == str(property_data):
+                        is_favorite = True
+                        break
         
         # Start the card
         favorite_badge = '<span class="favorite-badge">★</span>' if is_favorite else ''
@@ -174,9 +188,16 @@ def display_property_card(property_data, show_compare=True, show_favorite=True):
                 is_in_compare = False
                 if 'compare_properties' in st.session_state:
                     for comp in st.session_state.compare_properties:
-                        if str(comp.values) == str(property_data.values):
-                            is_in_compare = True
-                            break
+                        # Check if both are Series/DataFrame with values attribute
+                        if hasattr(comp, 'values') and hasattr(property_data, 'values'):
+                            if str(comp.values) == str(property_data.values):
+                                is_in_compare = True
+                                break
+                        # Check if they're dictionaries
+                        elif isinstance(comp, dict) and isinstance(property_data, dict):
+                            if str(comp) == str(property_data):
+                                is_in_compare = True
+                                break
                 
                 if st.checkbox("Compare", value=is_in_compare, key=f"compare_{property_id}"):
                     # Add to comparison list if not already there
@@ -186,9 +207,16 @@ def display_property_card(property_data, show_compare=True, show_favorite=True):
                         # Check if already in list to avoid duplicates
                         already_in_list = False
                         for comp in st.session_state.compare_properties:
-                            if str(comp.values) == str(property_data.values):
-                                already_in_list = True
-                                break
+                            # Check if both are Series/DataFrame with values attribute
+                            if hasattr(comp, 'values') and hasattr(property_data, 'values'):
+                                if str(comp.values) == str(property_data.values):
+                                    already_in_list = True
+                                    break
+                            # Check if they're dictionaries
+                            elif isinstance(comp, dict) and isinstance(property_data, dict):
+                                if str(comp) == str(property_data):
+                                    already_in_list = True
+                                    break
                         
                         if not already_in_list:
                             # Limit to 5 properties for comparison
@@ -199,10 +227,22 @@ def display_property_card(property_data, show_compare=True, show_favorite=True):
                 else:
                     # Remove from comparison list
                     if 'compare_properties' in st.session_state:
-                        st.session_state.compare_properties = [
-                            comp for comp in st.session_state.compare_properties 
-                            if str(comp.values) != str(property_data.values)
-                        ]
+                        new_compare_list = []
+                        for comp in st.session_state.compare_properties:
+                            should_keep = True
+                            # Check if both are Series/DataFrame with values attribute
+                            if hasattr(comp, 'values') and hasattr(property_data, 'values'):
+                                if str(comp.values) == str(property_data.values):
+                                    should_keep = False
+                            # Check if they're dictionaries
+                            elif isinstance(comp, dict) and isinstance(property_data, dict):
+                                if str(comp) == str(property_data):
+                                    should_keep = False
+                            
+                            if should_keep:
+                                new_compare_list.append(comp)
+                        
+                        st.session_state.compare_properties = new_compare_list
         
         with col3:
             # Add favorite button
@@ -217,10 +257,22 @@ def display_property_card(property_data, show_compare=True, show_favorite=True):
                         st.session_state.favorites.append(property_data)
                     else:
                         # Remove from favorites
-                        st.session_state.favorites = [
-                            fav for fav in st.session_state.favorites 
-                            if str(fav.values) != str(property_data.values)
-                        ]
+                        new_favorites_list = []
+                        for fav in st.session_state.favorites:
+                            should_keep = True
+                            # Check if both are Series/DataFrame with values attribute
+                            if hasattr(fav, 'values') and hasattr(property_data, 'values'):
+                                if str(fav.values) == str(property_data.values):
+                                    should_keep = False
+                            # Check if they're dictionaries
+                            elif isinstance(fav, dict) and isinstance(property_data, dict):
+                                if str(fav) == str(property_data):
+                                    should_keep = False
+                            
+                            if should_keep:
+                                new_favorites_list.append(fav)
+                        
+                        st.session_state.favorites = new_favorites_list
                     st.rerun()  # Refresh to update the display
         
         # End the card
@@ -673,7 +725,7 @@ def display_favorites_view(favorites_list):
     Display a list of favorited properties
     
     Args:
-        favorites_list (list): List of property Series objects that have been favorited
+        favorites_list (list): List of property Series objects or dictionaries that have been favorited
     """
     if not favorites_list or len(favorites_list) == 0:
         st.info("You haven't added any properties to your favorites yet.")
@@ -681,21 +733,43 @@ def display_favorites_view(favorites_list):
     
     st.subheader(f"My Favorites ({len(favorites_list)})")
     
-    # Convert list to DataFrame
-    favorites_df = pd.DataFrame(favorites_list)
+    # Handle different data types in favorites_list
+    try:
+        # Try to convert list to DataFrame - this works if all items are Series
+        favorites_df = pd.DataFrame(favorites_list)
+    except Exception as e:
+        # If conversion failed, we might have a mix of types or all dictionaries
+        st.warning("Some favorites may not display correctly. Try refreshing or clearing favorites if you encounter issues.")
     
     # Display favorite properties
     favorites_cols = [st.columns(2) for _ in range((len(favorites_list) + 1) // 2)]
     
     for i, property_data in enumerate(favorites_list):
-        row = i // 2
-        col = i % 2
-        with favorites_cols[row][col]:
-            display_property_card(
-                property_data, 
-                show_compare=True, 
-                show_favorite=True
-            )
+        try:
+            row = i // 2
+            col = i % 2
+            with favorites_cols[row][col]:
+                # Make sure property_data is properly structured
+                if isinstance(property_data, dict):
+                    # If it's a dictionary, we need to ensure required fields exist
+                    required_fields = ['price', 'address', 'bedrooms', 'bathrooms', 'square_feet', 'property_type', 'source', 'link']
+                    for field in required_fields:
+                        if field not in property_data:
+                            if field in ['price', 'bedrooms', 'bathrooms', 'square_feet']:
+                                property_data[field] = 0
+                            else:
+                                property_data[field] = "N/A"
+                
+                # Display the property card
+                display_property_card(
+                    property_data, 
+                    show_compare=True, 
+                    show_favorite=True
+                )
+        except Exception as e:
+            with favorites_cols[row][col]:
+                st.error(f"Error displaying this favorite property. It may use an incompatible format.")
+                st.caption(f"Error details: {str(e)}")
     
     # Add a button to clear all favorites
     if st.button("Clear All Favorites"):
