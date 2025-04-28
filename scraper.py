@@ -795,3 +795,441 @@ def scrape_trulia(location, max_listings=20, min_price=0, max_price=None, min_be
         # Try falling back to sample data for the requested location
         print(f"Generating sample data for {location} as Trulia scraping failed.")
         return generate_sample_data(location, max_listings, source="Trulia (Sample)")
+
+def scrape_redfin(location, max_listings=20, min_price=0, max_price=None, min_beds=0, 
+             min_baths=0, property_types=None, new_listings=False, include_sold=False, 
+             include_pending=True):
+    """
+    Scrape real estate listings from Redfin with advanced filters
+    
+    Args:
+        location (str): City, state or zip code
+        max_listings (int): Maximum number of listings to scrape
+        min_price (int): Minimum price filter
+        max_price (int): Maximum price filter
+        min_beds (int): Minimum number of bedrooms
+        min_baths (int): Minimum number of bathrooms
+        property_types (list): List of property types to include
+        new_listings (bool): Whether to only show listings from the last 7 days
+        include_sold (bool): Whether to include recently sold properties
+        include_pending (bool): Whether to include pending/contingent listings
+        
+    Returns:
+        pandas.DataFrame: DataFrame containing the scraped listings
+    """
+    # Format the location for the URL
+    formatted_location = quote_plus(location)
+    
+    # Build base URL
+    base_url = "https://www.redfin.com/city/"
+    
+    # Start with a search URL that should work for most locations
+    url = f"https://www.redfin.com/search/real-estate-in-{formatted_location}"
+    
+    # Build filter parameters
+    params = []
+    
+    # Price filter
+    if min_price > 0 or max_price is not None:
+        price_param = f"min-price={min_price}"
+        if max_price is not None:
+            price_param += f",max-price={max_price}"
+        params.append(price_param)
+    
+    # Beds filter
+    if min_beds > 0:
+        params.append(f"min-beds={min_beds}")
+    
+    # Baths filter
+    if min_baths > 0:
+        params.append(f"min-baths={min_baths}")
+    
+    # Property type filter
+    if property_types:
+        # Convert our property types to Redfin's format
+        redfin_property_map = {
+            'House': 'house',
+            'Condo': 'condo',
+            'Townhouse': 'townhome',
+            'Multi-Family': 'multifamily',
+            'Land': 'land',
+            'Apartment': 'apartment'
+        }
+        
+        redfin_types = [redfin_property_map.get(pt, '') for pt in property_types if pt in redfin_property_map]
+        if redfin_types:
+            property_param = f"property-type={','.join(redfin_types)}"
+            params.append(property_param)
+    
+    # New listings filter
+    if new_listings:
+        params.append("include=new-listings")
+    
+    # Status filter (sold, pending)
+    status_types = ["active"]
+    if include_sold:
+        status_types.append("sold-3mo") # Sold in last 3 months
+    if include_pending:
+        status_types.append("pending")
+    
+    params.append(f"status={','.join(status_types)}")
+    
+    # Add parameters to URL
+    if params:
+        url += "/filter/" + ";".join(params)
+    
+    try:
+        # Make the request with extra precautions for Redfin
+        headers = {
+            "User-Agent": get_random_user_agent(),
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Referer": "https://www.google.com/",
+            "sec-ch-ua": '"Chromium";v="110", "Not A(Brand";v="24", "Google Chrome";v="110"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"',
+        }
+        
+        # Use sessions for better cookie handling
+        session = requests.Session()
+        for key, value in headers.items():
+            session.headers[key] = value
+        
+        response = session.get(url, timeout=15)
+        
+        # Parse the HTML
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Find all property cards
+        property_cards = soup.select('.HomeCardContainer')
+        
+        # Limit to the maximum number requested
+        property_cards = property_cards[:max_listings]
+        
+        # Initialize lists to store property details
+        addresses = []
+        prices = []
+        bedrooms = []
+        bathrooms = []
+        square_feet = []
+        property_types = []
+        links = []
+        cities = []
+        
+        # Extract data from each property card
+        for card in property_cards:
+            try:
+                # Extract price
+                price_elem = card.select_one('.homecardV2Price')
+                price = clean_price(price_elem.text) if price_elem else None
+                prices.append(price)
+                
+                # Extract address
+                address_parts = []
+                street_elem = card.select_one('.displayAddressLine')
+                if street_elem:
+                    address_parts.append(street_elem.text.strip())
+                
+                city_state_elem = card.select_one('.cityStateAddress')
+                if city_state_elem:
+                    address_parts.append(city_state_elem.text.strip())
+                
+                address = ", ".join(address_parts) if address_parts else "N/A"
+                addresses.append(address)
+                
+                # Extract city from address
+                city = "N/A"
+                if ',' in address:
+                    city_parts = address.split(',')
+                    if len(city_parts) > 1:
+                        city = city_parts[1].strip()
+                cities.append(city)
+                
+                # Extract details (beds, baths, sqft)
+                beds = None
+                baths = None
+                sqft = None
+                
+                stats_elem = card.select_one('.HomeStatsV2')
+                if stats_elem:
+                    stats_text = stats_elem.text.lower()
+                    
+                    # Extract beds
+                    beds_match = re.search(r'(\d+\.?\d*)\s*bed', stats_text)
+                    if beds_match:
+                        beds = float(beds_match.group(1))
+                    
+                    # Extract baths
+                    baths_match = re.search(r'(\d+\.?\d*)\s*bath', stats_text)
+                    if baths_match:
+                        baths = float(baths_match.group(1))
+                    
+                    # Extract square feet
+                    sqft_match = re.search(r'(\d+[,\d]*)\s*sq ?ft', stats_text)
+                    if sqft_match:
+                        sqft = float(sqft_match.group(1).replace(',', ''))
+                
+                bedrooms.append(beds)
+                bathrooms.append(baths)
+                square_feet.append(sqft)
+                
+                # Extract property type
+                property_type_elem = card.select_one('.propertyType')
+                property_type = property_type_elem.text.strip() if property_type_elem else "House"
+                
+                # Standardize property type
+                if property_type:
+                    property_type = property_type.title()
+                property_types.append(property_type)
+                
+                # Extract link
+                link_elem = card.select_one('a.link-to-home-details')
+                if link_elem and 'href' in link_elem.attrs:
+                    link = f"https://www.redfin.com{link_elem['href']}"
+                else:
+                    link = "N/A"
+                links.append(link)
+                
+            except Exception as e:
+                print(f"Error parsing Redfin property card: {str(e)}")
+                continue
+        
+        # Create DataFrame
+        data = {
+            'address': addresses,
+            'city': cities,
+            'price': prices,
+            'bedrooms': bedrooms,
+            'bathrooms': bathrooms,
+            'square_feet': square_feet,
+            'property_type': property_types,
+            'link': links
+        }
+        
+        df = pd.DataFrame(data)
+        return df
+    
+    except Exception as e:
+        error_message = f"Failed to scrape Redfin: {str(e)}"
+        print(f"Debug: Error details for Redfin: {error_message}")
+        
+        # Try falling back to sample data for the requested location
+        print(f"Generating sample data for {location} as Redfin scraping failed.")
+        return generate_sample_data(location, max_listings, source="Redfin (Sample)")
+
+def scrape_homes_com(location, max_listings=20, min_price=0, max_price=None, min_beds=0, 
+               min_baths=0, property_types=None, new_listings=False, include_sold=False, 
+               include_pending=True):
+    """
+    Scrape real estate listings from Homes.com with advanced filters
+    
+    Args:
+        location (str): City, state or zip code
+        max_listings (int): Maximum number of listings to scrape
+        min_price (int): Minimum price filter
+        max_price (int): Maximum price filter
+        min_beds (int): Minimum number of bedrooms
+        min_baths (int): Minimum number of bathrooms
+        property_types (list): List of property types to include
+        new_listings (bool): Whether to only show listings from the last 7 days
+        include_sold (bool): Whether to include recently sold properties
+        include_pending (bool): Whether to include pending/contingent listings
+        
+    Returns:
+        pandas.DataFrame: DataFrame containing the scraped listings
+    """
+    # Format the location for the URL
+    formatted_location = quote_plus(location)
+    
+    # Build base URL
+    url = f"https://www.homes.com/for-sale/{formatted_location}/"
+    
+    # Add filters
+    filter_parts = []
+    
+    # Price filter
+    if min_price > 0:
+        filter_parts.append(f"min-price-{min_price}")
+    if max_price is not None:
+        filter_parts.append(f"max-price-{max_price}")
+    
+    # Beds filter
+    if min_beds > 0:
+        filter_parts.append(f"min-beds-{min_beds}")
+    
+    # Baths filter
+    if min_baths > 0:
+        filter_parts.append(f"min-baths-{min_baths}")
+    
+    # Property type filter
+    if property_types:
+        # Convert our property types to Homes.com format
+        homes_property_map = {
+            'House': 'single-family',
+            'Condo': 'condos-townhomes',
+            'Townhouse': 'condos-townhomes',
+            'Multi-Family': 'multi-family',
+            'Land': 'land',
+            'Apartment': 'condos-townhomes'
+        }
+        
+        homes_types = []
+        for pt in property_types:
+            mapped_type = homes_property_map.get(pt)
+            if mapped_type and mapped_type not in homes_types:
+                homes_types.append(mapped_type)
+        
+        if homes_types:
+            for property_type in homes_types:
+                filter_parts.append(f"property-type-{property_type}")
+    
+    # Add status filters
+    if include_sold:
+        filter_parts.append("include-sold")
+    if include_pending:
+        filter_parts.append("include-pending")
+    
+    # Add new listings filter
+    if new_listings:
+        filter_parts.append("new-7-days")
+    
+    # Complete the URL with filters
+    if filter_parts:
+        url += "/".join(filter_parts) + "/"
+    
+    try:
+        # Make the request
+        response = handle_request(url)
+        
+        # Parse the HTML
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Find all property cards
+        property_cards = soup.select('.for-sale-card')
+        
+        # Limit to maximum number requested
+        property_cards = property_cards[:max_listings]
+        
+        # Initialize lists to store property details
+        addresses = []
+        prices = []
+        bedrooms = []
+        bathrooms = []
+        square_feet = []
+        property_types = []
+        links = []
+        cities = []
+        
+        # Extract data from each property card
+        for card in property_cards:
+            try:
+                # Extract price
+                price_elem = card.select_one('.price')
+                price = clean_price(price_elem.text) if price_elem else None
+                prices.append(price)
+                
+                # Extract address
+                street_elem = card.select_one('.street-address')
+                locality_elem = card.select_one('.locality')
+                region_elem = card.select_one('.region')
+                
+                address_parts = []
+                if street_elem:
+                    address_parts.append(street_elem.text.strip())
+                
+                location_parts = []
+                if locality_elem:
+                    location_parts.append(locality_elem.text.strip())
+                if region_elem:
+                    location_parts.append(region_elem.text.strip())
+                
+                if location_parts:
+                    address_parts.append(", ".join(location_parts))
+                
+                address = ", ".join(address_parts) if address_parts else "N/A"
+                addresses.append(address)
+                
+                # Extract city
+                city = "N/A"
+                if locality_elem:
+                    city = locality_elem.text.strip()
+                cities.append(city)
+                
+                # Extract details (beds, baths, sqft)
+                beds = None
+                baths = None
+                sqft = None
+                
+                details_elems = card.select('.property-details-value')
+                details_labels = card.select('.property-details-label')
+                
+                for i, label_elem in enumerate(details_labels):
+                    if i < len(details_elems):
+                        label = label_elem.text.lower().strip()
+                        value = details_elems[i].text.strip()
+                        
+                        if 'bed' in label:
+                            beds = extract_number(value)
+                        elif 'bath' in label:
+                            baths = extract_number(value)
+                        elif 'sq ft' in label or 'sqft' in label:
+                            sqft = extract_number(value)
+                
+                bedrooms.append(beds)
+                bathrooms.append(baths)
+                square_feet.append(sqft)
+                
+                # Extract property type
+                property_type_elem = card.select_one('.property-type')
+                property_type = property_type_elem.text.strip() if property_type_elem else "House"
+                
+                # Standardize property type
+                if property_type:
+                    property_type = property_type.title()
+                    # Map Homes.com types to our standard types
+                    if 'Single Family' in property_type:
+                        property_type = 'House'
+                    elif 'Condo' in property_type or 'Town' in property_type:
+                        property_type = 'Condo'
+                
+                property_types.append(property_type)
+                
+                # Extract link
+                link_elem = card.select_one('a.for-sale-card-link')
+                if link_elem and 'href' in link_elem.attrs:
+                    link = f"https://www.homes.com{link_elem['href']}"
+                else:
+                    link = "N/A"
+                links.append(link)
+                
+            except Exception as e:
+                print(f"Error parsing Homes.com property card: {str(e)}")
+                continue
+        
+        # Create DataFrame
+        data = {
+            'address': addresses,
+            'city': cities,
+            'price': prices,
+            'bedrooms': bedrooms,
+            'bathrooms': bathrooms,
+            'square_feet': square_feet,
+            'property_type': property_types,
+            'link': links
+        }
+        
+        df = pd.DataFrame(data)
+        
+        # Add data quality score
+        if not df.empty and 'data_quality_score' not in df.columns:
+            df['data_quality_score'] = df.apply(lambda row: calculate_data_quality(row), axis=1)
+        
+        return df
+    
+    except Exception as e:
+        error_message = f"Failed to scrape Homes.com: {str(e)}"
+        print(f"Debug: Error details for Homes.com: {error_message}")
+        
+        # Try falling back to sample data for the requested location
+        print(f"Generating sample data for {location} as Homes.com scraping failed.")
+        return generate_sample_data(location, max_listings, source="Homes.com (Sample)")
