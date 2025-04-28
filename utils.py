@@ -384,26 +384,39 @@ def geocode_address(address):
     Returns:
         tuple: (latitude, longitude) coordinates or (None, None) if geocoding fails
     """
+    # Check if we've already geocoded this address (using session state as cache)
+    if 'geocode_cache' not in st.session_state:
+        st.session_state.geocode_cache = {}
+        
+    # Return cached result if available
+    if address in st.session_state.geocode_cache:
+        return st.session_state.geocode_cache[address]
+    
     # Initialize the geocoder with a custom user agent
     geolocator = Nominatim(user_agent="real_estate_scraper")
     
     try:
-        # Attempt to geocode the address
-        location = geolocator.geocode(address, timeout=10)
+        # Attempt to geocode the address with a shorter timeout
+        location = geolocator.geocode(address, timeout=5)
         
-        # If successful, return the coordinates
+        # If successful, cache and return the coordinates
         if location:
-            return (location.latitude, location.longitude)
+            coords = (location.latitude, location.longitude)
+            st.session_state.geocode_cache[address] = coords
+            return coords
         else:
+            st.session_state.geocode_cache[address] = (None, None)
             return (None, None)
     
     except (GeocoderTimedOut, GeocoderUnavailable) as e:
         # Handle geocoding errors gracefully
         print(f"Geocoding error for address '{address}': {str(e)}")
+        st.session_state.geocode_cache[address] = (None, None)
         return (None, None)
     except Exception as e:
         # Handle any other errors
         print(f"Unexpected error geocoding address '{address}': {str(e)}")
+        st.session_state.geocode_cache[address] = (None, None)
         return (None, None)
 
 def geocode_properties(properties_df):

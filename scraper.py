@@ -21,12 +21,12 @@ def get_random_user_agent():
     """Return a random user agent from the list"""
     return random.choice(USER_AGENTS)
 
-def handle_request(url, max_retries=3, use_proxy=False):
+def handle_request(url, max_retries=2, use_proxy=False):
     """Make a request with error handling, random delays, and retry logic
     
     Args:
         url (str): URL to request
-        max_retries (int): Maximum number of retry attempts
+        max_retries (int): Maximum number of retry attempts (reduced for speed)
         use_proxy (bool): Whether to use a proxy service (for advanced usage)
         
     Returns:
@@ -78,17 +78,21 @@ def handle_request(url, max_retries=3, use_proxy=False):
     
     for attempt in range(max_retries):
         try:
-            # Add a random delay between attempts, increasing with each retry
-            delay = random.uniform(2, 5) * (attempt + 1)
+            # Add a smaller random delay between attempts
+            # First attempt is fast, then increase for retries
+            if attempt == 0:
+                delay = random.uniform(0.1, 0.5)
+            else:
+                delay = random.uniform(1, 2) * attempt
             time.sleep(delay)
             
-            # Make the request
+            # Make the request with a shorter timeout
             response = requests.get(
                 url, 
                 headers=headers, 
                 cookies=cookies,
                 proxies=proxy, 
-                timeout=15
+                timeout=10
             )
             
             # If successful, return the response
