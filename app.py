@@ -9,7 +9,7 @@ import datetime as dt
 import yfinance as yf
 from scraper import scrape_zillow, scrape_realtor, scrape_trulia, generate_sample_data
 from data_processor import filter_properties, get_statistics, validate_and_clean_data, calculate_roi_metrics, estimate_rental_yield, estimate_appreciation_rate
-from utils import get_unique_values, format_price, display_property_card, display_interactive_comparison, display_favorites_view
+from utils import get_unique_values, format_price, display_property_card, display_interactive_comparison, display_favorites_view, geocode_properties, display_property_map
 from web_content import extract_property_details
 from link_scraper import scrape_links, extract_specific_links
 from sheets_exporter import export_dataframe_to_sheet, list_available_spreadsheets
@@ -66,7 +66,16 @@ if 'favorites' not in st.session_state:
     st.session_state.favorites = []
 
 # Create tabs for different functionality
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Real Estate Scraper", "Property Comparison", "Favorites", "ROI Analysis", "Link Scraper", "Google Sheets Export", "Stock Viewer"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+    "Real Estate Scraper", 
+    "Property Comparison", 
+    "Favorites", 
+    "Map View",
+    "ROI Analysis", 
+    "Link Scraper", 
+    "Google Sheets Export", 
+    "Stock Viewer"
+])
 
 # Initialize stock-related session state variables
 if 'stock_data' not in st.session_state:

@@ -1,5 +1,13 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
+import re
+import time
+import folium
+from folium.plugins import MarkerCluster
+from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
+import plotly.express as px
 
 def get_unique_values(df, column):
     """
@@ -364,6 +372,196 @@ def display_interactive_comparison(properties_list):
     if st.button("Clear Comparison"):
         st.session_state.compare_properties = []
         st.rerun()
+
+def geocode_address(address):
+    """
+    Convert an address to latitude and longitude coordinates.
+    
+    Args:
+        address (str): Property address to geocode
+        
+    Returns:
+        tuple: (latitude, longitude) coordinates or (None, None) if geocoding fails
+    """
+    # Initialize the geocoder with a custom user agent
+    geolocator = Nominatim(user_agent="real_estate_scraper")
+    
+    try:
+        # Attempt to geocode the address
+        location = geolocator.geocode(address, timeout=10)
+        
+        # If successful, return the coordinates
+        if location:
+            return (location.latitude, location.longitude)
+        else:
+            return (None, None)
+    
+    except (GeocoderTimedOut, GeocoderUnavailable) as e:
+        # Handle geocoding errors gracefully
+        print(f"Geocoding error for address '{address}': {str(e)}")
+        return (None, None)
+    except Exception as e:
+        # Handle any other errors
+        print(f"Unexpected error geocoding address '{address}': {str(e)}")
+        return (None, None)
+
+def geocode_properties(properties_df):
+    """
+    Add latitude and longitude coordinates to a DataFrame of properties
+    
+    Args:
+        properties_df (pd.DataFrame): DataFrame containing property listings with addresses
+        
+    Returns:
+        pd.DataFrame: DataFrame with added latitude and longitude columns
+    """
+    if properties_df.empty:
+        return properties_df
+    
+    # Check if geocoding has already been done
+    if 'latitude' in properties_df.columns and 'longitude' in properties_df.columns:
+        # Only geocode rows with missing coordinates
+        mask = properties_df['latitude'].isna() | properties_df['longitude'].isna()
+        if not mask.any():
+            return properties_df  # No geocoding needed
+    else:
+        # Add latitude and longitude columns
+        properties_df['latitude'] = None
+        properties_df['longitude'] = None
+        mask = pd.Series([True] * len(properties_df))  # Geocode all rows
+    
+    # Create a copy of the dataframe to avoid modifying the original during iteration
+    result_df = properties_df.copy()
+    
+    # Show a progress bar for geocoding
+    with st.spinner("Geocoding property addresses..."):
+        progress_bar = st.progress(0)
+        
+        # Process each property that needs geocoding
+        rows_to_process = mask.sum()
+        processed = 0
+        
+        for idx, row in properties_df[mask].iterrows():
+            # Combine address and city for better geocoding results
+            full_address = row['address']
+            if pd.notna(row.get('city')):
+                if row['city'] not in full_address:
+                    full_address += f", {row['city']}"
+                    
+            # Geocode the address
+            lat, lng = geocode_address(full_address)
+            
+            # Update the result dataframe
+            result_df.at[idx, 'latitude'] = lat
+            result_df.at[idx, 'longitude'] = lng
+            
+            # Update progress
+            processed += 1
+            progress_bar.progress(processed / rows_to_process)
+            
+            # Pause briefly to avoid overloading the geocoding service
+            time.sleep(0.5)
+        
+        # Clear progress bar
+        progress_bar.empty()
+    
+    return result_df
+
+def create_property_map(properties_df):
+    """
+    Create an interactive map showing property locations
+    
+    Args:
+        properties_df (pd.DataFrame): DataFrame containing property listings with coordinates
+        
+    Returns:
+        folium.Map: Interactive map object with property markers
+    """
+    # Filter properties with valid coordinates
+    valid_properties = properties_df.dropna(subset=['latitude', 'longitude'])
+    
+    if valid_properties.empty:
+        return None
+    
+    # Determine map center (average of all property coordinates)
+    center_lat = valid_properties['latitude'].mean()
+    center_lng = valid_properties['longitude'].mean()
+    
+    # Create the map
+    property_map = folium.Map(location=[center_lat, center_lng], zoom_start=12)
+    
+    # Add a marker cluster to handle many properties
+    marker_cluster = MarkerCluster().add_to(property_map)
+    
+    # Add markers for each property
+    for idx, property_data in valid_properties.iterrows():
+        # Create popup content with property details
+        price = format_price(property_data['price'])
+        beds = property_data['bedrooms'] if pd.notna(property_data['bedrooms']) else "N/A"
+        baths = property_data['bathrooms'] if pd.notna(property_data['bathrooms']) else "N/A"
+        sqft = f"{property_data['square_feet']:,.0f}" if pd.notna(property_data['square_feet']) else "N/A"
+        prop_type = property_data['property_type'] if pd.notna(property_data['property_type']) else "N/A"
+        
+        popup_html = f"""
+        <div style="width: 200px;">
+            <h4 style="margin: 5px 0;">{price}</h4>
+            <p style="margin: 2px 0;"><b>{property_data['address']}</b></p>
+            <p style="margin: 2px 0;">{beds} beds | {baths} baths | {sqft} sqft</p>
+            <p style="margin: 2px 0;">{prop_type} | {property_data['source']}</p>
+        </div>
+        """
+        
+        # Create popup
+        popup = folium.Popup(popup_html, max_width=300)
+        
+        # Add marker to cluster
+        folium.Marker(
+            location=[property_data['latitude'], property_data['longitude']],
+            popup=popup,
+            icon=folium.Icon(color="blue", icon="home")
+        ).add_to(marker_cluster)
+    
+    return property_map
+
+def display_property_map(properties_df):
+    """
+    Display an interactive map of property locations in Streamlit
+    
+    Args:
+        properties_df (pd.DataFrame): DataFrame containing property listings
+    """
+    if properties_df.empty:
+        st.info("No properties available for mapping.")
+        return
+    
+    # Ensure properties have coordinates
+    geocoded_properties = geocode_properties(properties_df)
+    
+    # Check if we have valid coordinates
+    valid_coords = geocoded_properties.dropna(subset=['latitude', 'longitude'])
+    
+    if valid_coords.empty:
+        st.warning("Could not geocode any property addresses. Map cannot be displayed.")
+        return
+    
+    # Create the map
+    property_map = create_property_map(geocoded_properties)
+    
+    if property_map:
+        # Display map in Streamlit
+        st.subheader(f"Map of {len(valid_coords)} Properties")
+        
+        # Show stats about mapping success
+        total_properties = len(geocoded_properties)
+        mapped_properties = len(valid_coords)
+        mapping_success_rate = (mapped_properties / total_properties) * 100 if total_properties > 0 else 0
+        
+        st.caption(f"Successfully mapped {mapped_properties} out of {total_properties} properties ({mapping_success_rate:.1f}%).")
+        
+        # Display the map
+        folium_static(property_map)
+    else:
+        st.warning("Could not create property map.")
 
 def display_favorites_view(favorites_list):
     """
