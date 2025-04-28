@@ -9,7 +9,7 @@ import datetime as dt
 import yfinance as yf
 from scraper import scrape_zillow, scrape_realtor, scrape_trulia, generate_sample_data
 from data_processor import filter_properties, get_statistics, validate_and_clean_data
-from utils import get_unique_values, format_price, display_property_card
+from utils import get_unique_values, format_price, display_property_card, display_interactive_comparison, display_favorites_view
 from web_content import extract_property_details
 from link_scraper import scrape_links, extract_specific_links
 from sheets_exporter import export_dataframe_to_sheet, list_available_spreadsheets
@@ -57,9 +57,16 @@ if 'links_scrape_status' not in st.session_state:
 
 if 'google_credentials' not in st.session_state:
     st.session_state.google_credentials = None
+    
+# Initialize comparison and favorites variables
+if 'compare_properties' not in st.session_state:
+    st.session_state.compare_properties = []
+
+if 'favorites' not in st.session_state:
+    st.session_state.favorites = []
 
 # Create tabs for different functionality
-tab1, tab2, tab3, tab4 = st.tabs(["Real Estate Scraper", "Link Scraper", "Google Sheets Export", "Stock Viewer"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Real Estate Scraper", "Property Comparison", "Favorites", "Link Scraper", "Google Sheets Export", "Stock Viewer"])
 
 # Initialize stock-related session state variables
 if 'stock_data' not in st.session_state:
@@ -413,7 +420,11 @@ with tab1:  # Real Estate Scraper tab
             cols = st.columns(3)
             for i, (_, property_row) in enumerate(filtered_df.iterrows()):
                 with cols[i % 3]:
-                    display_property_card(property_row)
+                    display_property_card(
+                        property_row,
+                        show_compare=True,
+                        show_favorite=True
+                    )
             
             # Option to download results as CSV
             st.download_button(
@@ -449,8 +460,40 @@ with tab1:  # Real Estate Scraper tab
             - Download the data as a CSV file
             """)
             
-# Tab 2: Link Scraper
+# Tab 2: Property Comparison
 with tab2:
+    st.header("Property Comparison")
+    
+    if 'compare_properties' in st.session_state and len(st.session_state.compare_properties) > 0:
+        # Display comparison of selected properties
+        display_interactive_comparison(st.session_state.compare_properties)
+    else:
+        # Show instructions if no properties are selected for comparison
+        st.info("Select properties to compare by using the 'Compare' checkbox on property cards")
+        
+        if 'properties_df' in st.session_state and not st.session_state.properties_df.empty:
+            st.write("Go to the Real Estate Scraper tab to start selecting properties for comparison")
+        else:
+            st.write("First scrape some listings using the Real Estate Scraper tab")
+
+# Tab 3: Favorites
+with tab3:
+    st.header("My Favorites")
+    
+    if 'favorites' in st.session_state and len(st.session_state.favorites) > 0:
+        # Display favorited properties
+        display_favorites_view(st.session_state.favorites)
+    else:
+        # Show instructions if no properties are favorited
+        st.info("You haven't added any properties to your favorites yet")
+        
+        if 'properties_df' in st.session_state and not st.session_state.properties_df.empty:
+            st.write("Go to the Real Estate Scraper tab to start adding favorites")
+        else:
+            st.write("First scrape some listings using the Real Estate Scraper tab")
+
+# Tab 4: Link Scraper
+with tab4:
     st.header("Website Link Scraper")
     st.markdown("This tool allows you to extract links from any website for further analysis.")
     

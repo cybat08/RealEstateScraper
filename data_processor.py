@@ -523,15 +523,132 @@ def add_derived_fields(df):
         
         df['size_category'] = np.select(conditions, choices, default='Unknown')
     
-    # Add data quality score (simple version based on missing data)
-    quality_columns = ['price', 'bedrooms', 'bathrooms', 'square_feet', 'address', 'city', 'state']
-    quality_columns = [col for col in quality_columns if col in df.columns]
+    # Add bedroom-to-bathroom ratio
+    if 'bedrooms' in df.columns and 'bathrooms' in df.columns:
+        condition = (~df['bedrooms'].isna() & ~df['bathrooms'].isna() & (df['bathrooms'] > 0))
+        
+        if condition.any():
+            df.loc[condition, 'bed_bath_ratio'] = df.loc[condition, 'bedrooms'] / df.loc[condition, 'bathrooms']
+            # Round to 2 decimal places
+            df['bed_bath_ratio'] = df['bed_bath_ratio'].round(2)
     
-    if quality_columns:
-        # Calculate percentage of non-null values for key fields
-        df['data_quality_score'] = df[quality_columns].notnull().mean(axis=1) * 100
+    # Add value score (a composite metric combining multiple factors)
+    value_columns = ['price_per_sqft', 'bedrooms', 'bathrooms', 'square_feet']
+    value_columns = [col for col in value_columns if col in df.columns]
+    
+    if len(value_columns) >= 3:  # Need at least 3 factors to create a meaningful score
+        # Create normalized versions of each column (0-100 scale)
+        for col in value_columns:
+            if col == 'price_per_sqft':
+                # For price_per_sqft, lower is better, so invert the normalization
+                if df[col].notna().any():
+                    min_val = df[col].min()
+                    max_val = df[col].max()
+                    if max_val > min_val:
+                        df[f'norm_{col}'] = 100 - (((df[col] - min_val) / (max_val - min_val)) * 100)
+                    else:
+                        df[f'norm_{col}'] = 50  # Default if all values are the same
+            else:
+                # For other metrics, higher is better
+                if df[col].notna().any():
+                    min_val = df[col].min()
+                    max_val = df[col].max()
+                    if max_val > min_val:
+                        df[f'norm_{col}'] = ((df[col] - min_val) / (max_val - min_val)) * 100
+                    else:
+                        df[f'norm_{col}'] = 50  # Default if all values are the same
+        
+        # Calculate weighted average of normalized values
+        norm_cols = [f'norm_{col}' for col in value_columns if f'norm_{col}' in df.columns]
+        weights = {
+            'norm_price_per_sqft': 0.4,  # Price per sqft is most important
+            'norm_square_feet': 0.3,     # Square footage is second most important
+            'norm_bedrooms': 0.15,       # Bedrooms
+            'norm_bathrooms': 0.15       # Bathrooms
+        }
+        
+        # Apply weights only to columns that exist
+        valid_weights = {k: v for k, v in weights.items() if k in norm_cols}
+        sum_weights = sum(valid_weights.values())
+        
+        if sum_weights > 0:
+            df['value_score'] = 0
+            for col, weight in valid_weights.items():
+                df['value_score'] += df[col] * (weight / sum_weights)
+            
+            # Round to integer
+            df['value_score'] = df['value_score'].round().astype('Int64')
+            
+            # Drop temporary normalization columns
+            df = df.drop(columns=norm_cols, errors='ignore')
+    
+    # Add investment potential score
+    if 'price' in df.columns and 'square_feet' in df.columns and 'city' in df.columns:
+        # Group by city to get average price per sqft per city
+        city_avg_price_sqft = df.groupby('city')['price_per_sqft'].median().reset_index()
+        city_avg_price_sqft.columns = ['city', 'median_price_per_sqft']
+        
+        # Merge back to original dataframe
+        df = df.merge(city_avg_price_sqft, on='city', how='left')
+        
+        # Calculate investment score based on how good the price is compared to city median
+        condition = (~df['price_per_sqft'].isna() & ~df['median_price_per_sqft'].isna() & (df['median_price_per_sqft'] > 0))
+        
+        if condition.any():
+            # If property price_per_sqft is less than city median, it's a better investment
+            df.loc[condition, 'price_vs_median'] = (df.loc[condition, 'median_price_per_sqft'] / df.loc[condition, 'price_per_sqft']) * 100
+            df['price_vs_median'] = df['price_vs_median'].round().astype('Int64')
+            
+            # Create investment score - higher means better value
+            conditions = [
+                df['price_vs_median'] > 120,  # Over 20% better than median
+                (df['price_vs_median'] > 105) & (df['price_vs_median'] <= 120),  # 5-20% better than median
+                (df['price_vs_median'] >= 95) & (df['price_vs_median'] <= 105),  # Within 5% of median
+                (df['price_vs_median'] >= 80) & (df['price_vs_median'] < 95),  # 5-20% worse than median
+                df['price_vs_median'] < 80  # Over 20% worse than median
+            ]
+            
+            choices = ['Excellent', 'Good', 'Average', 'Below Average', 'Poor']
+            df['investment_rating'] = np.select(conditions, choices, default='Unknown')
+    
+    # Add data quality score (enhanced version with weights for different fields)
+    quality_columns = {
+        'price': 0.20,
+        'bedrooms': 0.15,
+        'bathrooms': 0.15,
+        'square_feet': 0.15,
+        'address': 0.10,
+        'city': 0.10,
+        'property_type': 0.10,
+        'state': 0.05
+    }
+    
+    available_quality_columns = {col: weight for col, weight in quality_columns.items() if col in df.columns}
+    
+    if available_quality_columns:
+        # Calculate weighted quality score
+        df['data_quality_score'] = 0
+        total_weight = sum(available_quality_columns.values())
+        
+        for col, weight in available_quality_columns.items():
+            # Calculate percent non-null for this column
+            non_null_pct = df[col].notnull().astype(int) * 100
+            # Apply weight
+            df['data_quality_score'] += non_null_pct * (weight / total_weight)
+        
         # Round to integer
         df['data_quality_score'] = df['data_quality_score'].round().astype(int)
+        
+        # Add data quality category
+        conditions = [
+            df['data_quality_score'] >= 90,
+            (df['data_quality_score'] >= 70) & (df['data_quality_score'] < 90),
+            (df['data_quality_score'] >= 50) & (df['data_quality_score'] < 70),
+            df['data_quality_score'] < 50
+        ]
+        
+        choices = ['Excellent', 'Good', 'Fair', 'Poor']
+        df['data_quality_category'] = np.select(conditions, choices, default='Unknown')
     
     # Add scrape date if it doesn't exist
     if 'scrape_date' not in df.columns:
