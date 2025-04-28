@@ -292,10 +292,12 @@ def scrape_zillow(location, max_listings=20, min_price=0, max_price=None, min_be
                 if link_elem and 'href' in link_elem.attrs:
                     href = link_elem['href']
                     # Handle both absolute and relative URLs
-                    if href.startswith('http'):
+                    if isinstance(href, str) and href.startswith('http'):
                         link = href
-                    else:
+                    elif isinstance(href, str):
                         link = f"https://www.zillow.com{href}"
+                    else:
+                        link = "N/A"
                 else:
                     link = "N/A"
                 links.append(link)
@@ -474,7 +476,17 @@ def scrape_realtor(location, max_listings=20, min_price=0, max_price=None, min_b
                 
                 # Extract link
                 link_elem = card.select_one('a[data-testid="property-anchor"]')
-                link = "https://www.realtor.com" + link_elem['href'] if link_elem and 'href' in link_elem.attrs else "N/A"
+                if link_elem and 'href' in link_elem.attrs:
+                    href = link_elem['href']
+                    # Handle both absolute and relative URLs
+                    if isinstance(href, str) and href.startswith('http'):
+                        link = href
+                    elif isinstance(href, str):
+                        link = f"https://www.realtor.com{href}"
+                    else:
+                        link = "N/A"
+                else:
+                    link = "N/A"
                 links.append(link)
                 
             except Exception as e:
@@ -739,7 +751,17 @@ def scrape_trulia(location, max_listings=20, min_price=0, max_price=None, min_be
                 
                 # Extract link
                 link_elem = card.select_one('a[data-testid="property-card-link"]')
-                link = "https://www.trulia.com" + link_elem['href'] if link_elem and 'href' in link_elem.attrs else "N/A"
+                if link_elem and 'href' in link_elem.attrs:
+                    href = link_elem['href']
+                    # Handle both absolute and relative URLs
+                    if isinstance(href, str) and href.startswith('http'):
+                        link = href
+                    elif isinstance(href, str):
+                        link = f"https://www.trulia.com{href}"
+                    else:
+                        link = "N/A"
+                else:
+                    link = "N/A"
                 links.append(link)
                 
             except Exception as e:
