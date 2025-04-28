@@ -1,9 +1,11 @@
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
+import numpy as np
 import random
 import time
 import re
+import datetime
 from urllib.parse import quote_plus
 
 # User agents to rotate for avoiding detection
@@ -265,6 +267,87 @@ def scrape_realtor(location, max_listings=20):
     
     except Exception as e:
         raise Exception(f"Failed to scrape Realtor.com: {str(e)}")
+
+def generate_sample_data(location, num_listings=10, source="Sample"):
+    """
+    Generate sample property data for testing when real scraping fails
+    
+    Args:
+        location (str): Location string to include in the addresses
+        num_listings (int): Number of sample listings to generate
+        source (str): Name of the source to include
+        
+    Returns:
+        pandas.DataFrame: DataFrame containing sample property listings
+    """
+    # Extract city name from location for more realistic data
+    city = location.split(',')[0].strip() if ',' in location else location
+    
+    # Lists to store property data
+    addresses = []
+    cities = []
+    prices = []
+    bedrooms = []
+    bathrooms = []
+    square_feet = []
+    property_types = []
+    links = []
+    
+    # Property type options
+    prop_types = ["House", "Condo", "Townhouse", "Multi-Family", "Land"]
+    
+    # Street names for variety
+    street_names = ["Main St", "Oak Ave", "Maple Dr", "Washington Blvd", "Cedar Ln", 
+                   "Park Ave", "Lake Dr", "Forest Rd", "Sunset Blvd", "River Rd"]
+    
+    # Generate random properties
+    for i in range(num_listings):
+        # Generate address
+        house_num = random.randint(100, 9999)
+        street = random.choice(street_names)
+        address = f"{house_num} {street}, {city}"
+        addresses.append(address)
+        
+        # Use the provided city
+        cities.append(city)
+        
+        # Generate price (between $100k and $1.5M)
+        price = random.randint(100000, 1500000)
+        prices.append(price)
+        
+        # Generate bedrooms (1-6)
+        bedroom = random.randint(1, 6)
+        bedrooms.append(bedroom)
+        
+        # Generate bathrooms (1-4.5)
+        bathroom = round(random.uniform(1, 4.5) * 2) / 2  # Round to nearest 0.5
+        bathrooms.append(bathroom)
+        
+        # Generate square feet (800-5000)
+        sqft = random.randint(800, 5000)
+        square_feet.append(sqft)
+        
+        # Select property type
+        property_type = random.choice(prop_types)
+        property_types.append(property_type)
+        
+        # Generate fake link
+        link = f"https://example.com/property/{source.lower()}/{i}"
+        links.append(link)
+    
+    # Create DataFrame
+    data = {
+        'address': addresses,
+        'city': cities,
+        'price': prices,
+        'bedrooms': bedrooms,
+        'bathrooms': bathrooms,
+        'square_feet': square_feet,
+        'property_type': property_types,
+        'link': links
+    }
+    
+    return pd.DataFrame(data)
 
 def scrape_trulia(location, max_listings=20):
     """

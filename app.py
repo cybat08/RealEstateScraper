@@ -7,7 +7,7 @@ import json
 import os
 import datetime as dt
 import yfinance as yf
-from scraper import scrape_zillow, scrape_realtor, scrape_trulia
+from scraper import scrape_zillow, scrape_realtor, scrape_trulia, generate_sample_data
 from data_processor import filter_properties, get_statistics, validate_and_clean_data
 from utils import get_unique_values, format_price, display_property_card
 from web_content import extract_property_details
@@ -84,6 +84,10 @@ location = st.sidebar.text_input("Location (city, state or zip code)", "Seattle,
 # Number of listings to scrape
 num_listings = st.sidebar.slider("Maximum number of listings to scrape per site", 5, 100, 20)
 
+# Option to load demo data
+use_demo_data = st.sidebar.checkbox("Use demo data for testing", value=False, 
+                                    help="Generate sample data for testing data validation and cleanup features")
+
 # Scrape button
 scrape_button = st.sidebar.button("Scrape Listings")
 
@@ -104,33 +108,73 @@ if scrape_button:
         total_sites = len(websites)
         sites_completed = 0
         
-        # Scrape each selected website
-        for website in websites:
-            status_text.text(f"Scraping {website}...")
-            
-            try:
-                if website == "Zillow":
-                    new_listings = scrape_zillow(location, num_listings)
-                elif website == "Realtor.com":
-                    new_listings = scrape_realtor(location, num_listings)
-                elif website == "Trulia":
-                    new_listings = scrape_trulia(location, num_listings)
+        # Scrape each selected website or use demo data
+        if use_demo_data:
+            # Generate demo data for each selected website
+            for website in websites:
+                status_text.text(f"Generating demo data for {website}...")
                 
-                if not new_listings.empty:
-                    # Add a source column
-                    new_listings['source'] = website
-                    # Append to the main dataframe
-                    all_listings = pd.concat([all_listings, new_listings], ignore_index=True)
-                    status_text.text(f"Successfully scraped {len(new_listings)} listings from {website}")
-                else:
-                    status_text.text(f"No listings found on {website} for {location}")
-            except Exception as e:
-                status_text.text(f"Error scraping {website}: {str(e)}")
-            
-            # Update progress
-            sites_completed += 1
-            progress_bar.progress(sites_completed / total_sites)
-            time.sleep(0.5)  # Small delay for better UX
+                # Generate sample data for this website
+                demo_listings = generate_sample_data(location, num_listings, website)
+                demo_listings['source'] = website
+                
+                # Add to the combined listings
+                all_listings = pd.concat([all_listings, demo_listings], ignore_index=True)
+                
+                status_text.text(f"Generated {len(demo_listings)} demo listings for {website}")
+                st.sidebar.write(f"Demo data: {len(demo_listings)} listings for {website}")
+                
+                # Update progress
+                sites_completed += 1
+                progress_bar.progress(sites_completed / total_sites)
+                time.sleep(0.5)  # Small delay for better UX
+        else:
+            # Scrape real data from each selected website
+            for website in websites:
+                status_text.text(f"Scraping {website}...")
+                
+                try:
+                    status_text.text(f"Scraping {website}... Please wait...")
+                    
+                    if website == "Zillow":
+                        new_listings = scrape_zillow(location, num_listings)
+                        st.sidebar.write(f"Debug: Zillow listings count: {len(new_listings) if not isinstance(new_listings, Exception) else 'Error'}")
+                    elif website == "Realtor.com":
+                        new_listings = scrape_realtor(location, num_listings)
+                        st.sidebar.write(f"Debug: Realtor listings count: {len(new_listings) if not isinstance(new_listings, Exception) else 'Error'}")
+                    elif website == "Trulia":
+                        new_listings = scrape_trulia(location, num_listings)
+                        st.sidebar.write(f"Debug: Trulia listings count: {len(new_listings) if not isinstance(new_listings, Exception) else 'Error'}")
+                    
+                    if isinstance(new_listings, pd.DataFrame) and not new_listings.empty:
+                        # Add a source column
+                        new_listings['source'] = website
+                        # Append to the main dataframe
+                        all_listings = pd.concat([all_listings, new_listings], ignore_index=True)
+                        status_text.text(f"Successfully scraped {len(new_listings)} listings from {website}")
+                    else:
+                        status_text.text(f"No listings found on {website} for {location}")
+                        
+                        # If real scraping failed, use demo data as fallback
+                        fallback_listings = generate_sample_data(location, max(5, num_listings // 2), website)
+                        fallback_listings['source'] = website
+                        all_listings = pd.concat([all_listings, fallback_listings], ignore_index=True)
+                        st.sidebar.warning(f"Using {len(fallback_listings)} demo listings for {website} as fallback")
+                        
+                except Exception as e:
+                    status_text.text(f"Error scraping {website}: {str(e)}")
+                    st.sidebar.error(f"Debug: Error details for {website}: {str(e)}")
+                    
+                    # If real scraping failed with an error, use demo data as fallback
+                    fallback_listings = generate_sample_data(location, max(5, num_listings // 2), website)
+                    fallback_listings['source'] = website
+                    all_listings = pd.concat([all_listings, fallback_listings], ignore_index=True)
+                    st.sidebar.warning(f"Using {len(fallback_listings)} demo listings for {website} as fallback")
+                
+                # Update progress
+                sites_completed += 1
+                progress_bar.progress(sites_completed / total_sites)
+                time.sleep(0.5)  # Small delay for better UX
         
         # Save results to session state
         if not all_listings.empty:
