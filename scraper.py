@@ -21,8 +21,20 @@ def get_random_user_agent():
     """Return a random user agent from the list"""
     return random.choice(USER_AGENTS)
 
-def handle_request(url):
-    """Make a request with error handling and random delays"""
+def handle_request(url, max_retries=3, use_proxy=False):
+    """Make a request with error handling, random delays, and retry logic
+    
+    Args:
+        url (str): URL to request
+        max_retries (int): Maximum number of retry attempts
+        use_proxy (bool): Whether to use a proxy service (for advanced usage)
+        
+    Returns:
+        requests.Response: Response object if successful
+        
+    Raises:
+        Exception: If all retry attempts fail
+    """
     headers = {
         "User-Agent": get_random_user_agent(),
         "Accept-Language": "en-US,en;q=0.9",
@@ -32,17 +44,74 @@ def handle_request(url):
         "Upgrade-Insecure-Requests": "1",
         "Pragma": "no-cache",
         "Cache-Control": "no-cache",
+        "sec-ch-ua": '"Chromium";v="110", "Not A(Brand";v="24", "Google Chrome";v="110"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        "sec-fetch-dest": "document",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-site": "none",
+        "sec-fetch-user": "?1",
+        "dnt": "1"
     }
     
-    # Add a random delay to avoid rate limiting
-    time.sleep(random.uniform(1, 3))
+    # Add a random referrer from major sites
+    referrers = [
+        "https://www.google.com/",
+        "https://www.bing.com/",
+        "https://www.facebook.com/",
+        "https://www.twitter.com/",
+        "https://www.instagram.com/"
+    ]
+    headers["Referer"] = random.choice(referrers)
     
-    try:
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()  # Raise an exception for bad status codes
-        return response
-    except requests.exceptions.RequestException as e:
-        raise Exception(f"Request failed: {str(e)}")
+    # Add cookies to seem more like a real browser
+    cookies = {
+        "_ga": f"GA1.2.{random.randint(1000000, 9999999)}.{random.randint(1000000, 9999999)}",
+        "_gid": f"GA1.2.{random.randint(1000000, 9999999)}.{random.randint(1000000, 9999999)}",
+    }
+    
+    proxy = None
+    if use_proxy:
+        # This would use a proxy service in a production environment
+        # For demo purposes, we're not implementing actual proxy usage
+        pass
+    
+    for attempt in range(max_retries):
+        try:
+            # Add a random delay between attempts, increasing with each retry
+            delay = random.uniform(2, 5) * (attempt + 1)
+            time.sleep(delay)
+            
+            # Make the request
+            response = requests.get(
+                url, 
+                headers=headers, 
+                cookies=cookies,
+                proxies=proxy, 
+                timeout=15
+            )
+            
+            # If successful, return the response
+            if response.status_code == 200:
+                return response
+            
+            # If we get blocked (403), raise specific exception
+            if response.status_code == 403:
+                raise Exception(f"Access forbidden (403) for url: {url}")
+                
+            # For other status codes, try to raise for status
+            response.raise_for_status()
+            
+        except requests.exceptions.RequestException as e:
+            # If this was our last attempt, raise the exception
+            if attempt == max_retries - 1:
+                raise Exception(f"Request failed after {max_retries} attempts: {str(e)}")
+            
+            # Otherwise, try again with different parameters
+            print(f"Request attempt {attempt + 1} failed: {str(e)}. Retrying...")
+    
+    # This should not be reached due to the exception in the loop
+    raise Exception(f"Request failed after {max_retries} attempts due to unknown error")
 
 def clean_price(price_str):
     """Extract and clean price from various formats"""
@@ -220,7 +289,15 @@ def scrape_zillow(location, max_listings=20, min_price=0, max_price=None, min_be
                 
                 # Extract link
                 link_elem = card.select_one('a[data-test="property-card-link"]')
-                link = "https://www.zillow.com" + link_elem['href'] if link_elem and 'href' in link_elem.attrs else "N/A"
+                if link_elem and 'href' in link_elem.attrs:
+                    href = link_elem['href']
+                    # Handle both absolute and relative URLs
+                    if href.startswith('http'):
+                        link = href
+                    else:
+                        link = f"https://www.zillow.com{href}"
+                else:
+                    link = "N/A"
                 links.append(link)
                 
             except Exception as e:
@@ -244,7 +321,16 @@ def scrape_zillow(location, max_listings=20, min_price=0, max_price=None, min_be
         return df
     
     except Exception as e:
-        raise Exception(f"Failed to scrape Zillow: {str(e)}")
+        error_message = f"Failed to scrape Zillow: {str(e)}"
+        print(f"Debug: Error details for Zillow: {error_message}")
+        
+        # Explain to the user what happened
+        if "403" in str(e):
+            print("Zillow has detected and blocked our scraping attempt. This is a common issue as real estate sites have anti-scraping measures.")
+            
+        # Try falling back to sample data for the requested location
+        print(f"Generating sample data for {location} as Zillow scraping failed.")
+        return generate_sample_data(location, max_listings, source="Zillow (Sample)")
 
 def scrape_realtor(location, max_listings=20, min_price=0, max_price=None, min_beds=0, 
                min_baths=0, property_types=None, new_listings=False, include_sold=False, 
@@ -412,7 +498,12 @@ def scrape_realtor(location, max_listings=20, min_price=0, max_price=None, min_b
         return df
     
     except Exception as e:
-        raise Exception(f"Failed to scrape Realtor.com: {str(e)}")
+        error_message = f"Failed to scrape Realtor.com: {str(e)}"
+        print(f"Debug: Error details for Realtor.com: {error_message}")
+        
+        # Try falling back to sample data for the requested location
+        print(f"Generating sample data for {location} as Realtor.com scraping failed.")
+        return generate_sample_data(location, max_listings, source="Realtor (Sample)")
 
 def generate_sample_data(location, num_listings=10, source="Sample"):
     """
@@ -672,4 +763,9 @@ def scrape_trulia(location, max_listings=20, min_price=0, max_price=None, min_be
         return df
     
     except Exception as e:
-        raise Exception(f"Failed to scrape Trulia: {str(e)}")
+        error_message = f"Failed to scrape Trulia: {str(e)}"
+        print(f"Debug: Error details for Trulia: {error_message}")
+        
+        # Try falling back to sample data for the requested location
+        print(f"Generating sample data for {location} as Trulia scraping failed.")
+        return generate_sample_data(location, max_listings, source="Trulia (Sample)")
