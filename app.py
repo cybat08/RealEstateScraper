@@ -927,18 +927,18 @@ with tab7:
         st.subheader("Export Options")
         
         # Spreadsheet options
-        new_spreadsheet = st.checkbox("Create new spreadsheet", value=True)
+        new_spreadsheet = st.checkbox("Create new spreadsheet", value=True, key="new_spreadsheet_checkbox")
         
         if new_spreadsheet:
-            spreadsheet_name = st.text_input("New spreadsheet name", "Real Estate Data")
+            spreadsheet_name = st.text_input("New spreadsheet name", "Real Estate Data", key="new_spreadsheet_name_input")
             spreadsheet_id = None
         else:
             # Would provide a dropdown of existing spreadsheets here
-            spreadsheet_id = st.text_input("Existing spreadsheet ID")
+            spreadsheet_id = st.text_input("Existing spreadsheet ID", key="existing_spreadsheet_id_input")
             spreadsheet_name = None
         
-        worksheet_name = st.text_input("Worksheet name", "Data")
-        append_data = st.checkbox("Append to existing data in worksheet", value=False)
+        worksheet_name = st.text_input("Worksheet name", "Data", key="worksheet_name_input")
+        append_data = st.checkbox("Append to existing data in worksheet", value=False, key="append_data_checkbox")
     
     # Export button
     export_button = st.button(
