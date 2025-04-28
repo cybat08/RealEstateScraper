@@ -479,6 +479,199 @@ def handle_outliers(df):
     
     return df
 
+def calculate_roi_metrics(property_data, rental_yield_percent=None, appreciation_rate=None):
+    """
+    Calculate ROI metrics for a real estate property
+    
+    Args:
+        property_data (pd.Series): Series containing property data
+        rental_yield_percent (float, optional): Estimated annual rental yield as percentage
+        appreciation_rate (float, optional): Estimated annual appreciation rate as percentage
+        
+    Returns:
+        dict: Dictionary containing ROI metrics
+    """
+    # Default values if not provided
+    rental_yield = rental_yield_percent if rental_yield_percent is not None else estimate_rental_yield(property_data)
+    appreciation = appreciation_rate if appreciation_rate is not None else estimate_appreciation_rate(property_data)
+    
+    # Get property price
+    price = property_data['price'] if pd.notna(property_data['price']) else 0
+    
+    # Skip calculation if price is zero
+    if price == 0:
+        return {
+            'rental_yield': None,
+            'annual_rental_income': None,
+            'cash_flow': None,
+            'appreciation_rate': None,
+            'five_year_value': None,
+            'roi_5yr': None,
+            'investment_recommendation': "Insufficient data for analysis"
+        }
+    
+    # Calculate rental income
+    annual_rental_income = (price * rental_yield) / 100
+    monthly_rental_income = annual_rental_income / 12
+    
+    # Estimate expenses (property tax, insurance, maintenance, vacancy, etc.)
+    # Conservative estimate: 40% of rental income goes to expenses
+    monthly_expenses = monthly_rental_income * 0.4
+    
+    # Calculate monthly mortgage payment (assuming 20% down, 30 year term, 6.5% interest)
+    down_payment = price * 0.2
+    loan_amount = price - down_payment
+    monthly_interest_rate = 6.5 / 100 / 12
+    loan_term_months = 30 * 12
+    
+    # Calculate mortgage payment using formula: P = L[i(1+i)^n]/[(1+i)^n-1]
+    # Where P = payment, L = loan amount, i = monthly interest rate, n = number of payments
+    if loan_amount > 0:
+        mortgage_payment = loan_amount * (monthly_interest_rate * (1 + monthly_interest_rate) ** loan_term_months) / ((1 + monthly_interest_rate) ** loan_term_months - 1)
+    else:
+        mortgage_payment = 0
+    
+    # Calculate cash flow
+    monthly_cash_flow = monthly_rental_income - monthly_expenses - mortgage_payment
+    annual_cash_flow = monthly_cash_flow * 12
+    
+    # Calculate 5-year metrics
+    five_year_value = price * ((1 + appreciation / 100) ** 5)
+    five_year_appreciation = five_year_value - price
+    five_year_cash_flow = annual_cash_flow * 5
+    
+    # Calculate total 5-year ROI
+    total_investment = down_payment + (monthly_expenses * 12)  # Down payment + first year expenses
+    five_year_roi = (five_year_appreciation + five_year_cash_flow) / total_investment * 100
+    
+    # Determine investment recommendation
+    recommendation = ""
+    if five_year_roi > 50:
+        recommendation = "Excellent investment opportunity with strong returns"
+    elif five_year_roi > 30:
+        recommendation = "Good investment with solid potential returns"
+    elif five_year_roi > 15:
+        recommendation = "Average investment opportunity"
+    elif five_year_roi > 0:
+        recommendation = "Below average returns, consider negotiating price"
+    else:
+        recommendation = "Not recommended as an investment property"
+    
+    # Return metrics dictionary
+    return {
+        'rental_yield': rental_yield,
+        'annual_rental_income': annual_rental_income,
+        'monthly_cash_flow': monthly_cash_flow,
+        'appreciation_rate': appreciation,
+        'five_year_value': five_year_value,
+        'roi_5yr': five_year_roi,
+        'investment_recommendation': recommendation
+    }
+
+def estimate_rental_yield(property_data):
+    """
+    Estimate rental yield based on property characteristics
+    
+    Args:
+        property_data (pd.Series): Series containing property data
+        
+    Returns:
+        float: Estimated annual rental yield as percentage
+    """
+    # Base rental yield by property type
+    base_yields = {
+        'House': 5.0,
+        'Condo': 5.5,
+        'Townhouse': 5.2,
+        'Multi-Family': 7.0,
+        'Apartment': 6.0,
+        'Land': 2.0,
+        'Commercial': 8.0
+    }
+    
+    # Get property type and set default yield
+    property_type = property_data['property_type'] if pd.notna(property_data['property_type']) else 'House'
+    rental_yield = base_yields.get(property_type, 5.0)
+    
+    # Adjust based on location (city)
+    if 'city' in property_data and pd.notna(property_data['city']):
+        city = property_data['city'].lower()
+        # Higher yields in certain areas
+        high_yield_cities = ['detroit', 'cleveland', 'memphis', 'birmingham', 'toledo']
+        medium_yield_cities = ['atlanta', 'houston', 'dallas', 'phoenix', 'las vegas']
+        low_yield_cities = ['san francisco', 'los angeles', 'new york', 'seattle', 'boston', 'miami']
+        
+        if any(city in c for c in high_yield_cities):
+            rental_yield += 2.0
+        elif any(city in c for c in medium_yield_cities):
+            rental_yield += 0.5
+        elif any(city in c for c in low_yield_cities):
+            rental_yield -= 1.0
+    
+    # Adjust based on beds and baths
+    if 'bedrooms' in property_data and pd.notna(property_data['bedrooms']):
+        # 3-4 bedroom properties often have the best rental yields
+        if 2 <= property_data['bedrooms'] <= 4:
+            rental_yield += 0.3
+        elif property_data['bedrooms'] > 4:
+            rental_yield -= 0.2  # Luxury homes typically have lower yields
+    
+    # Cap the yield within reasonable range
+    rental_yield = max(2.0, min(rental_yield, 12.0))
+    
+    return rental_yield
+
+def estimate_appreciation_rate(property_data):
+    """
+    Estimate annual appreciation rate based on property characteristics
+    
+    Args:
+        property_data (pd.Series): Series containing property data
+        
+    Returns:
+        float: Estimated annual appreciation rate as percentage
+    """
+    # Base appreciation rate (national average)
+    base_rate = 3.5
+    
+    # Adjust based on location
+    if 'city' in property_data and pd.notna(property_data['city']):
+        city = property_data['city'].lower()
+        # Higher appreciation cities
+        high_growth_cities = ['austin', 'nashville', 'raleigh', 'tampa', 'boise', 'phoenix', 'salt lake']
+        medium_growth_cities = ['dallas', 'denver', 'atlanta', 'charlotte', 'houston', 'miami']
+        low_growth_cities = ['buffalo', 'cleveland', 'detroit', 'baltimore', 'chicago', 'milwaukee']
+        
+        if any(city in c for c in high_growth_cities):
+            base_rate += 2.0
+        elif any(city in c for c in medium_growth_cities):
+            base_rate += 1.0
+        elif any(city in c for c in low_growth_cities):
+            base_rate -= 0.5
+    
+    # Adjust based on property price vs area average
+    if 'price_vs_median' in property_data and pd.notna(property_data['price_vs_median']):
+        # Properties priced below market tend to appreciate faster
+        if property_data['price_vs_median'] > 120:  # Priced 20% below market
+            base_rate += 1.0
+        elif property_data['price_vs_median'] > 110:  # Priced 10% below market
+            base_rate += 0.5
+        elif property_data['price_vs_median'] < 80:  # Priced 20% above market
+            base_rate -= 0.5
+    
+    # Adjust based on property type
+    if 'property_type' in property_data and pd.notna(property_data['property_type']):
+        property_type = property_data['property_type']
+        if property_type == 'Land':
+            base_rate += 1.0  # Land can appreciate faster in growing areas
+        elif property_type == 'Condo':
+            base_rate -= 0.5  # Condos typically appreciate slower than single-family homes
+    
+    # Cap the appreciation rate within reasonable range
+    appreciation_rate = max(1.0, min(base_rate, 7.0))
+    
+    return appreciation_rate
+
 def add_derived_fields(df):
     """
     Add useful derived fields based on existing data

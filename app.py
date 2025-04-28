@@ -8,7 +8,7 @@ import os
 import datetime as dt
 import yfinance as yf
 from scraper import scrape_zillow, scrape_realtor, scrape_trulia, generate_sample_data
-from data_processor import filter_properties, get_statistics, validate_and_clean_data
+from data_processor import filter_properties, get_statistics, validate_and_clean_data, calculate_roi_metrics, estimate_rental_yield, estimate_appreciation_rate
 from utils import get_unique_values, format_price, display_property_card, display_interactive_comparison, display_favorites_view
 from web_content import extract_property_details
 from link_scraper import scrape_links, extract_specific_links
@@ -66,7 +66,7 @@ if 'favorites' not in st.session_state:
     st.session_state.favorites = []
 
 # Create tabs for different functionality
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Real Estate Scraper", "Property Comparison", "Favorites", "Link Scraper", "Google Sheets Export", "Stock Viewer"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Real Estate Scraper", "Property Comparison", "Favorites", "ROI Analysis", "Link Scraper", "Google Sheets Export", "Stock Viewer"])
 
 # Initialize stock-related session state variables
 if 'stock_data' not in st.session_state:
@@ -492,8 +492,183 @@ with tab3:
         else:
             st.write("First scrape some listings using the Real Estate Scraper tab")
 
-# Tab 4: Link Scraper
+# Tab 4: ROI Analysis
 with tab4:
+    st.header("AI-Powered ROI Analysis")
+    st.markdown("""
+    This tool uses AI to analyze potential Return on Investment (ROI) for real estate properties. 
+    It calculates estimated rental yields, cash flow, and long-term appreciation to help you make smarter investment decisions.
+    """)
+    
+    if 'properties_df' in st.session_state and not st.session_state.properties_df.empty:
+        # Property selector
+        st.subheader("Select Property to Analyze")
+        
+        # Display properties in a simple table to choose from
+        property_table = st.session_state.properties_df[['address', 'city', 'price', 'bedrooms', 'bathrooms', 'property_type', 'source']].copy()
+        st.dataframe(property_table, use_container_width=True)
+        
+        # User selects property by index
+        selected_idx = st.number_input("Enter row number of property to analyze", 
+                                       min_value=0, 
+                                       max_value=len(st.session_state.properties_df)-1 if len(st.session_state.properties_df) > 0 else 0,
+                                       value=0)
+        
+        # Get the selected property
+        selected_property = st.session_state.properties_df.iloc[selected_idx] if not st.session_state.properties_df.empty else None
+        
+        if selected_property is not None:
+            st.subheader("Property Details")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown(f"**Address:** {selected_property['address']}")
+                st.markdown(f"**City:** {selected_property['city'] if 'city' in selected_property and pd.notna(selected_property['city']) else 'N/A'}")
+                st.markdown(f"**Price:** {format_price(selected_property['price'])}")
+            
+            with col2:
+                st.markdown(f"**Bedrooms:** {selected_property['bedrooms']}")
+                st.markdown(f"**Bathrooms:** {selected_property['bathrooms']}")
+                st.markdown(f"**Property Type:** {selected_property['property_type']}")
+            
+            # ROI parameters customization
+            st.subheader("Investment Parameters")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Allow user to override estimated values
+                default_yield = estimate_rental_yield(selected_property)
+                rental_yield = st.number_input("Annual Rental Yield (%)", 
+                                            min_value=1.0, 
+                                            max_value=15.0, 
+                                            value=default_yield,
+                                            step=0.1,
+                                            format="%.1f")
+                
+                st.caption(f"Estimated rental yield for this property is {default_yield:.1f}%")
+            
+            with col2:
+                default_appreciation = estimate_appreciation_rate(selected_property)
+                appreciation_rate = st.number_input("Annual Appreciation Rate (%)", 
+                                                min_value=0.0, 
+                                                max_value=10.0, 
+                                                value=default_appreciation,
+                                                step=0.1,
+                                                format="%.1f")
+                
+                st.caption(f"Estimated appreciation rate for this area is {default_appreciation:.1f}%")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                down_payment_pct = st.slider("Down Payment (%)", 
+                                            min_value=5, 
+                                            max_value=100, 
+                                            value=20)
+            
+            with col2:
+                interest_rate = st.slider("Mortgage Interest Rate (%)", 
+                                        min_value=2.0, 
+                                        max_value=10.0, 
+                                        value=6.5,
+                                        step=0.1)
+            
+            # Calculate ROI
+            if st.button("Calculate ROI"):
+                with st.spinner("Analyzing investment potential..."):
+                    # Override default values in the property data for calculation
+                    property_data = selected_property.copy()
+                    
+                    # Calculate ROI metrics
+                    roi_metrics = calculate_roi_metrics(property_data, rental_yield, appreciation_rate)
+                    
+                    # Display results
+                    st.subheader("ROI Analysis Results")
+                    
+                    # Create metrics display
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.metric("Annual Rental Yield", f"{roi_metrics['rental_yield']:.1f}%")
+                        st.metric("Monthly Cash Flow", f"${roi_metrics['monthly_cash_flow']:,.2f}")
+                    
+                    with col2:
+                        annual_rental = roi_metrics['annual_rental_income']
+                        st.metric("Annual Rental Income", f"${annual_rental:,.0f}")
+                        st.metric("5-Year ROI", f"{roi_metrics['roi_5yr']:.1f}%")
+                    
+                    with col3:
+                        current_price = selected_property['price']
+                        future_value = roi_metrics['five_year_value']
+                        appreciation_value = future_value - current_price
+                        st.metric("5-Year Value", f"${future_value:,.0f}", 
+                                 delta=f"${appreciation_value:,.0f}")
+                        st.metric("Appreciation Rate", f"{roi_metrics['appreciation_rate']:.1f}%/year")
+                    
+                    # Investment recommendation
+                    st.subheader("Investment Recommendation")
+                    
+                    # Format the recommendation with colorful background
+                    recommendation = roi_metrics['investment_recommendation']
+                    if "excellent" in recommendation.lower():
+                        st.success(recommendation)
+                    elif "good" in recommendation.lower():
+                        st.info(recommendation)
+                    elif "average" in recommendation.lower():
+                        st.warning(recommendation)
+                    else:
+                        st.error(recommendation)
+                    
+                    # Show detailed analysis
+                    with st.expander("Detailed Analysis"):
+                        st.markdown("""
+                        ### Methodology
+                        
+                        This analysis is based on the following calculations:
+                        
+                        - **Monthly Rental Income**: Estimated based on property characteristics and location
+                        - **Monthly Expenses**: Estimated at 40% of rental income (taxes, insurance, maintenance, vacancy)
+                        - **Mortgage Payment**: Calculated based on purchase price, down payment, and interest rate
+                        - **Cash Flow**: Rental income minus expenses and mortgage payment
+                        - **Appreciation**: Estimated based on location, property type, and market trends
+                        - **5-Year ROI**: (5-year appreciation + 5-year cash flow) / initial investment
+                        
+                        > This is an estimate based on available data and should be used as a starting point for further due diligence.
+                        """)
+    else:
+        # No properties available
+        st.info("No properties available for analysis. Please use the Real Estate Scraper tab to find properties first.")
+        
+        # Show a sample of what the tool can do
+        st.subheader("How This Tool Works")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("""
+            **This tool helps you:**
+            
+            - Calculate potential rental income for properties
+            - Estimate monthly cash flow after expenses
+            - Project property value appreciation over time
+            - Determine overall investment return (ROI)
+            - Get AI-powered investment recommendations
+            """)
+        
+        with col2:
+            st.markdown("""
+            **The analysis considers:**
+            
+            - Property location and market trends
+            - Property type and characteristics
+            - Current interest rates and financing options
+            - Typical operating expenses
+            - Long-term appreciation potential
+            """)
+
+# Tab 5: Link Scraper
+with tab5:
     st.header("Website Link Scraper")
     st.markdown("This tool allows you to extract links from any website for further analysis.")
     
@@ -589,8 +764,8 @@ with tab4:
             
             # We'll implement this in the Google Sheets tab
 
-# Tab 3: Google Sheets Export
-with tab3:
+# Tab 6: Google Sheets Export
+with tab6:
     st.header("Google Sheets Export")
     st.markdown("Export your scraped data to Google Sheets for easier sharing and collaboration.")
     
@@ -679,8 +854,8 @@ with tab3:
             except Exception as e:
                 st.error(f"Error during export: {str(e)}")
                 
-# Tab 4: Stock Viewer
-with tab4:
+# Tab 7: Stock Viewer
+with tab7:
     st.header("Stock Market Viewer")
     st.markdown("Monitor stock performance and analyze market trends to inform your real estate investment decisions.")
     
