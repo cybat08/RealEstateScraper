@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4e8cff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2563eb;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background Circle -->
+  <circle cx="256" cy="256" r="240" fill="url(#grad1)" />
+  <circle cx="256" cy="256" r="220" fill="white" />
+  
+  <!-- House with roof and door -->
+  <g transform="translate(90, 80) scale(0.85)">
+    <!-- Roof -->
+    <path d="M200,60 L50,160 L350,160 Z" fill="#ff6b4a" stroke="#333" stroke-width="8" />
+    
+    <!-- House body -->
+    <rect x="80" y="160" width="240" height="180" fill="#fffaf0" stroke="#333" stroke-width="8" />
+    
+    <!-- Door -->
+    <rect x="170" y="260" width="60" height="80" fill="#8b4513" stroke="#333" stroke-width="4" />
+    
+    <!-- Door handle -->
+    <circle cx="215" cy="300" r="5" fill="#ffd700" />
+    
+    <!-- Windows -->
+    <rect x="110" y="190" width="50" height="50" fill="#87ceeb" stroke="#333" stroke-width="4" />
+    <rect x="240" y="190" width="50" height="50" fill="#87ceeb" stroke="#333" stroke-width="4" />
+    
+    <!-- Window frames -->
+    <path d="M110,215 L160,215 M135,190 L135,240" stroke="#333" stroke-width="2" />
+    <path d="M240,215 L290,215 M265,190 L265,240" stroke="#333" stroke-width="2" />
+  </g>
+  
+  <!-- Dollar Sign -->
+  <g transform="translate(320, 320) scale(1.8)">
+    <circle cx="0" cy="0" r="40" fill="#2ecc71" />
+    <path d="M0,-25 L0,25 M-15,-15 C-15,-20 -10,-25 0,-25 C10,-25 15,-20 15,-15 C15,-5 -15,5 -15,15 C-15,20 -10,25 0,25 C10,25 15,20 15,15" 
+          fill="none" stroke="white" stroke-width="6" stroke-linecap="round" />
+  </g>
+</svg>

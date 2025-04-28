@@ -8,9 +8,20 @@ from utils import get_unique_values, format_price, display_property_card
 from web_content import extract_property_details
 
 # Configure the page
+# Try to use our custom icon if possible, otherwise use a house emoji as fallback
+try:
+    from pathlib import Path
+    icon_path = Path(".streamlit/static/icon.svg")
+    if icon_path.exists():
+        page_icon = "icon.svg"
+    else:
+        page_icon = "🏠"
+except:
+    page_icon = "🏠"
+    
 st.set_page_config(
     page_title="Real Estate Scraper",
-    page_icon="🏠",
+    page_icon=page_icon,
     layout="wide"
 )
 
