@@ -350,8 +350,8 @@ with tab1:  # Real Estate Scraper tab
         
         # Bedrooms and bathrooms filters
         with col2:
-            min_beds = st.number_input("Minimum Bedrooms", 0, 10, 0)
-            min_baths = st.number_input("Minimum Bathrooms", 0, 10, 0)
+            min_beds = st.number_input("Minimum Bedrooms", 0, 10, 0, key="filter_min_bedrooms")
+            min_baths = st.number_input("Minimum Bathrooms", 0, 10, 0, key="filter_min_bathrooms")
         
         # Additional filters
         with col3:
@@ -587,7 +587,7 @@ with tab4:
         st.caption("Note: Property locations are approximated based on address geocoding. Click on markers to see property details.")
         
         # Offer option to recalculate coordinates
-        if st.button("Refresh Map Coordinates"):
+        if st.button("Refresh Map Coordinates", key="refresh_map_coordinates_button"):
             with st.spinner("Updating property coordinates..."):
                 # Force recalculate all coordinates
                 updated_df = geocode_properties(properties_df)
@@ -692,7 +692,7 @@ with tab5:
                                         step=0.1)
             
             # Calculate ROI
-            if st.button("Calculate ROI"):
+            if st.button("Calculate ROI", key="calculate_roi_button"):
                 with st.spinner("Analyzing investment potential..."):
                     # Override default values in the property data for calculation
                     property_data = selected_property.copy()
@@ -817,7 +817,7 @@ with tab6:
         """)
     
     # Scrape button
-    scrape_links_button = st.button("Scrape Links")
+    scrape_links_button = st.button("Scrape Links", key="scrape_links_button")
     
     if scrape_links_button:
         if not url:
@@ -872,7 +872,7 @@ with tab6:
         )
         
         # Export to Google Sheets button
-        if st.button("Export to Google Sheets"):
+        if st.button("Export to Google Sheets", key="links_export_to_sheets_button"):
             st.markdown("""
             **Google Sheets Integration**
             
@@ -934,6 +934,7 @@ with tab7:
     # Export button
     export_button = st.button(
         "Export to Google Sheets",
+        key="export_to_sheets_button",
         disabled=(
             st.session_state.properties_df.empty and st.session_state.links_df.empty
             or not credentials_json
@@ -1012,7 +1013,7 @@ with tab8:
         compare_stocks = st.checkbox("Compare Performance", value=True)
         
         # Fetch button
-        fetch_data = st.button("Fetch Stock Data")
+        fetch_data = st.button("Fetch Stock Data", key="fetch_stock_data_button")
     
     # Fetch data
     if fetch_data or not st.session_state.stock_data.empty:
