@@ -8,7 +8,7 @@ import os
 import datetime as dt
 import yfinance as yf
 from scraper import scrape_zillow, scrape_realtor, scrape_trulia
-from data_processor import filter_properties, get_statistics
+from data_processor import filter_properties, get_statistics, validate_and_clean_data
 from utils import get_unique_values, format_price, display_property_card
 from web_content import extract_property_details
 from link_scraper import scrape_links, extract_specific_links
@@ -134,10 +134,20 @@ if scrape_button:
         
         # Save results to session state
         if not all_listings.empty:
-            st.session_state.properties_df = all_listings
-            st.session_state.scrape_status = f"Successfully scraped {len(all_listings)} listings"
-            # Show success message
-            st.sidebar.success(f"Successfully scraped {len(all_listings)} listings!")
+            # Apply data validation and cleanup
+            status_text.text("Validating and cleaning property data...")
+            clean_listings = validate_and_clean_data(all_listings)
+            
+            # Save the cleaned data
+            st.session_state.properties_df = clean_listings
+            st.session_state.scrape_status = f"Successfully scraped and validated {len(clean_listings)} listings"
+            
+            # Show success message with data quality info
+            if 'data_quality_score' in clean_listings.columns:
+                avg_quality = clean_listings['data_quality_score'].mean()
+                st.sidebar.success(f"Successfully scraped {len(clean_listings)} listings! Average data quality: {avg_quality:.0f}%")
+            else:
+                st.sidebar.success(f"Successfully scraped {len(clean_listings)} listings!")
         else:
             st.session_state.scrape_status = "No listings found"
             st.sidebar.warning("No listings were found. Try a different location or website.")
@@ -282,6 +292,54 @@ with tab1:  # Real Estate Scraper tab
             # Display statistics table
             st.subheader("Summary Statistics")
             st.dataframe(stats_df, use_container_width=True)
+            
+            # Display data quality metrics if available
+            if 'data_quality_score' in filtered_df.columns or 'price_outlier' in filtered_df.columns or 'sqft_outlier' in filtered_df.columns:
+                st.subheader("Data Quality Metrics")
+                
+                quality_col1, quality_col2 = st.columns(2)
+                
+                with quality_col1:
+                    # Show data quality score distribution if available
+                    if 'data_quality_score' in filtered_df.columns:
+                        fig = px.histogram(
+                            filtered_df,
+                            x="data_quality_score",
+                            nbins=10,
+                            title="Data Quality Score Distribution",
+                            labels={"data_quality_score": "Quality Score (%)", "count": "Number of Listings"}
+                        )
+                        fig.update_layout(xaxis_range=[0, 100])
+                        st.plotly_chart(fig, use_container_width=True)
+                
+                with quality_col2:
+                    # Show derived fields statistics
+                    metrics = []
+                    
+                    if 'price_outlier' in filtered_df.columns:
+                        outlier_count = filtered_df['price_outlier'].sum()
+                        outlier_pct = (outlier_count / len(filtered_df)) * 100
+                        metrics.append(f"Price Outliers: {outlier_count} ({outlier_pct:.1f}%)")
+                    
+                    if 'sqft_outlier' in filtered_df.columns:
+                        outlier_count = filtered_df['sqft_outlier'].sum()
+                        outlier_pct = (outlier_count / len(filtered_df)) * 100
+                        metrics.append(f"Square Footage Outliers: {outlier_count} ({outlier_pct:.1f}%)")
+                    
+                    if 'price_category' in filtered_df.columns:
+                        category_counts = filtered_df['price_category'].value_counts()
+                        st.write("**Price Categories:**")
+                        for category, count in category_counts.items():
+                            st.write(f"- {category}: {count} listings ({(count/len(filtered_df))*100:.1f}%)")
+                    
+                    if metrics:
+                        st.write("**Data Quality Metrics:**")
+                        for metric in metrics:
+                            st.write(f"- {metric}")
+                    
+                    if 'validated_at' in filtered_df.columns:
+                        latest_validation = filtered_df['validated_at'].max()
+                        st.write(f"**Last Validation:** {latest_validation}")
         
         # Display results
         st.header(f"Results ({len(filtered_df)} listings)")
