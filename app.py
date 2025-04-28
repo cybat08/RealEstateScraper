@@ -9,72 +9,68 @@ import datetime as dt
 import yfinance as yf
 from scraper import scrape_zillow, scrape_realtor, scrape_trulia, generate_sample_data
 from data_processor import filter_properties, get_statistics, validate_and_clean_data, calculate_roi_metrics, estimate_rental_yield, estimate_appreciation_rate
-from utils import get_unique_values, format_price, display_property_card, display_interactive_comparison, display_favorites_view, geocode_properties, display_property_map
+from utils import get_unique_values, format_price, display_property_card, display_interactive_comparison, display_favorites_view
 from web_content import extract_property_details
 from link_scraper import scrape_links, extract_specific_links
 from sheets_exporter import export_dataframe_to_sheet, list_available_spreadsheets
 
-# Configure the page
-# Try to use our custom icon if possible, otherwise use a house emoji as fallback
-try:
-    from pathlib import Path
-    icon_path = Path(".streamlit/static/icon.svg")
-    if icon_path.exists():
-        page_icon = "icon.svg"
-    else:
-        page_icon = "🏠"
-except:
-    page_icon = "🏠"
-    
+# Set page configuration
 st.set_page_config(
     page_title="Real Estate Scraper",
-    page_icon=page_icon,
-    layout="wide"
+    page_icon="🏠",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Initialize session states
+# Custom styling
+st.markdown("""
+<style>
+    .main-header {color: #2c39b1;}
+    .property-card {
+        border: 1px solid #ddd; 
+        border-radius: 5px;
+        padding: 10px;
+        margin-bottom: 10px;
+    }
+    .label {font-weight: bold;}
+    .favorite-btn {color: gold;}
+    .button-row {display: flex; gap: 10px;}
+</style>
+""", unsafe_allow_html=True)
+
+# App title
+st.title("🏠 Real Estate Scraper & Analysis")
+
+# Application description
+st.markdown("""
+This app allows you to scrape and analyze real estate listings from multiple websites. 
+Search for properties by location, compare them side by side, and perform investment analysis.
+""")
+
+# Initialize session state
 if 'properties_df' not in st.session_state:
     st.session_state.properties_df = pd.DataFrame()
-
+    
 if 'scrape_status' not in st.session_state:
     st.session_state.scrape_status = ""
     
 if 'selected_property' not in st.session_state:
     st.session_state.selected_property = None
-
-# Title and description
-st.title("🏠 Real Estate Listings Scraper")
-st.markdown("""
-This app scrapes real estate listings and web links from popular websites and allows you to filter, analyze, and export the results including to Google Sheets.
-""")
-
-# Initialize additional session state variables
-if 'links_df' not in st.session_state:
-    st.session_state.links_df = pd.DataFrame()
-
-if 'links_scrape_status' not in st.session_state:
-    st.session_state.links_scrape_status = ""
-
-if 'google_credentials' not in st.session_state:
-    st.session_state.google_credentials = None
     
-# Initialize comparison and favorites variables
-if 'compare_properties' not in st.session_state:
-    st.session_state.compare_properties = []
+if 'comparison_list' not in st.session_state:
+    st.session_state.comparison_list = []
 
 if 'favorites' not in st.session_state:
     st.session_state.favorites = []
 
 # Create tabs for different functionality
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "Real Estate Scraper", 
     "Property Comparison", 
     "Favorites", 
-    "Map View",
     "ROI Analysis", 
     "Link Scraper", 
-    "Google Sheets Export", 
-    "Stock Viewer"
+    "Google Sheets Export"
 ])
 
 # Initialize stock-related session state variables
@@ -321,1032 +317,876 @@ with tab1:  # Real Estate Scraper tab
                         st.warning("Could not retrieve detailed information for this property.")
                 except Exception as e:
                     st.error(f"Error retrieving property details: {str(e)}")
+                    
+            # Calculate and display ROI metrics
+            st.subheader("Investment Analysis")
+            with st.spinner("Calculating investment metrics..."):
+                try:
+                    # Estimate rental yield and appreciation rate based on property characteristics
+                    rental_yield = estimate_rental_yield(property_data)
+                    appreciation_rate = estimate_appreciation_rate(property_data)
+                    
+                    # Calculate ROI metrics
+                    roi_metrics = calculate_roi_metrics(
+                        property_data, 
+                        rental_yield_percent=rental_yield,
+                        appreciation_rate=appreciation_rate
+                    )
+                    
+                    # Display the metrics in columns
+                    metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
+                    
+                    with metric_col1:
+                        st.metric("Est. Monthly Rent", f"${roi_metrics['monthly_rent']:.2f}")
+                        
+                    with metric_col2:
+                        st.metric("Cap Rate", f"{roi_metrics['cap_rate']:.2f}%")
+                        
+                    with metric_col3:
+                        st.metric("Cash on Cash Return", f"{roi_metrics['cash_on_cash_return']:.2f}%")
+                        
+                    with metric_col4:
+                        st.metric("5-Year Equity Growth", f"${roi_metrics['equity_5yr']:.2f}")
+                        
+                    # Add a disclaimer
+                    st.caption("Note: These are estimates based on available data and market assumptions. Always perform your own due diligence.")
+                    
+                except Exception as e:
+                    st.error(f"Error calculating investment metrics: {str(e)}")
             
-            # Link to the original listing
-            st.markdown(f"[View Full Listing on {property_data['source']}]({property_link})")
-
-    # Filtering section (only show if we have data)
-    if not st.session_state.properties_df.empty:
-        st.header("Filter Listings")
-    
-        col1, col2, col3 = st.columns(3)
-        
-        # Get unique values for filters
-        unique_sources = get_unique_values(st.session_state.properties_df, 'source')
-        unique_cities = get_unique_values(st.session_state.properties_df, 'city')
-        unique_property_types = get_unique_values(st.session_state.properties_df, 'property_type')
-        
-        # Price range filter
-        min_price = int(st.session_state.properties_df['price'].min()) if not st.session_state.properties_df.empty else 0
-        max_price = int(st.session_state.properties_df['price'].max()) if not st.session_state.properties_df.empty else 1000000
-        
-        with col1:
-            price_range = st.slider(
-                "Price Range ($)",
-                min_price,
-                max_price,
-                (min_price, max_price)
-            )
-        
-        # Bedrooms and bathrooms filters
-        with col2:
-            min_beds = st.number_input("Minimum Bedrooms", 0, 10, 0, key="filter_min_bedrooms")
-            min_baths = st.number_input("Minimum Bathrooms", 0, 10, 0, key="filter_min_bathrooms")
-        
-        # Additional filters
-        with col3:
-            selected_sources = st.multiselect("Sources", unique_sources, default=unique_sources)
-            selected_cities = st.multiselect("Cities", unique_cities, default=unique_cities)
-            selected_property_types = st.multiselect("Property Types", unique_property_types, default=unique_property_types)
-        
-        # Apply filters
-        filtered_df = filter_properties(
-            st.session_state.properties_df,
-            price_range,
-            min_beds,
-            min_baths,
-            selected_sources,
-            selected_cities,
-            selected_property_types
-        )
-    
-        # Display statistics
-        if not filtered_df.empty:
-            st.header("Statistics")
-            stats_df = get_statistics(filtered_df)
+            # Display a link to the original listing
+            st.markdown(f"[View Original Listing]({property_link})")
+    else:
+        # Display the main property listings
+        if not st.session_state.properties_df.empty:
+            st.subheader("Property Listings")
             
-            col1, col2 = st.columns(2)
+            # Add filtering options
+            st.markdown("### Filter Listings")
+            
+            # Create columns for filters
+            col1, col2, col3 = st.columns(3)
             
             with col1:
-                # Price distribution histogram
-                fig = px.histogram(
-                    filtered_df,
-                    x="price",
-                    nbins=20,
-                    title="Price Distribution",
-                    labels={"price": "Price ($)", "count": "Number of Listings"}
+                # Get min and max price values
+                min_price = int(st.session_state.properties_df['price'].min()) if not st.session_state.properties_df.empty else 0
+                max_price = int(st.session_state.properties_df['price'].max()) if not st.session_state.properties_df.empty else 1000000
+                
+                # Price range filter
+                price_range = st.slider(
+                    "Price Range",
+                    min_value=min_price,
+                    max_value=max_price,
+                    value=(min_price, max_price),
+                    step=10000,
+                    format="$%d"
                 )
-                st.plotly_chart(fig, use_container_width=True)
-            
+                
+                # Bedrooms filter
+                min_beds = st.number_input(
+                    "Minimum Bedrooms",
+                    min_value=0,
+                    max_value=10,
+                    value=0
+                )
+                
             with col2:
-                # Bedrooms vs Price scatter plot
-                fig = px.scatter(
-                    filtered_df,
-                    x="bedrooms",
-                    y="price",
-                    color="source",
-                    title="Bedrooms vs Price",
-                    labels={"bedrooms": "Bedrooms", "price": "Price ($)"}
+                # Bathrooms filter
+                min_baths = st.number_input(
+                    "Minimum Bathrooms",
+                    min_value=0,
+                    max_value=10,
+                    value=0
                 )
-                st.plotly_chart(fig, use_container_width=True)
-            
-            # Display statistics table
-            st.subheader("Summary Statistics")
-            st.dataframe(stats_df, use_container_width=True)
-            
-            # Display data quality metrics if available
-            if 'data_quality_score' in filtered_df.columns or 'price_outlier' in filtered_df.columns or 'sqft_outlier' in filtered_df.columns:
-                st.subheader("Data Quality Metrics")
                 
-                quality_col1, quality_col2 = st.columns(2)
+                # Property type filter
+                property_types = st.multiselect(
+                    "Property Types",
+                    options=get_unique_values(st.session_state.properties_df, 'property_type'),
+                    default=get_unique_values(st.session_state.properties_df, 'property_type')
+                )
                 
-                with quality_col1:
-                    # Show data quality score distribution if available
-                    if 'data_quality_score' in filtered_df.columns:
-                        fig = px.histogram(
-                            filtered_df,
-                            x="data_quality_score",
-                            nbins=10,
-                            title="Data Quality Score Distribution",
-                            labels={"data_quality_score": "Quality Score (%)", "count": "Number of Listings"}
-                        )
-                        fig.update_layout(xaxis_range=[0, 100])
-                        st.plotly_chart(fig, use_container_width=True)
+            with col3:
+                # Source filter
+                sources = st.multiselect(
+                    "Sources",
+                    options=get_unique_values(st.session_state.properties_df, 'source'),
+                    default=get_unique_values(st.session_state.properties_df, 'source')
+                )
                 
-                with quality_col2:
-                    # Show derived fields statistics
-                    metrics = []
-                    
-                    if 'price_outlier' in filtered_df.columns:
-                        outlier_count = filtered_df['price_outlier'].sum()
-                        outlier_pct = (outlier_count / len(filtered_df)) * 100
-                        metrics.append(f"Price Outliers: {outlier_count} ({outlier_pct:.1f}%)")
-                    
-                    if 'sqft_outlier' in filtered_df.columns:
-                        outlier_count = filtered_df['sqft_outlier'].sum()
-                        outlier_pct = (outlier_count / len(filtered_df)) * 100
-                        metrics.append(f"Square Footage Outliers: {outlier_count} ({outlier_pct:.1f}%)")
-                    
-                    if 'price_category' in filtered_df.columns:
-                        category_counts = filtered_df['price_category'].value_counts()
-                        st.write("**Price Categories:**")
-                        for category, count in category_counts.items():
-                            st.write(f"- {category}: {count} listings ({(count/len(filtered_df))*100:.1f}%)")
-                    
-                    if metrics:
-                        st.write("**Data Quality Metrics:**")
-                        for metric in metrics:
-                            st.write(f"- {metric}")
-                    
-                    if 'validated_at' in filtered_df.columns:
-                        latest_validation = filtered_df['validated_at'].max()
-                        st.write(f"**Last Validation:** {latest_validation}")
-        
-        # Display results
-        st.header(f"Results ({len(filtered_df)} listings)")
-        
-        if filtered_df.empty:
-            st.warning("No properties match your filters. Try adjusting your criteria.")
-        else:
-            # Sort options
-            sort_by = st.selectbox(
-                "Sort by",
-                ["Price (Low to High)", "Price (High to Low)", "Bedrooms", "Bathrooms", "Square Feet"]
-            )
+                # City filter
+                cities = st.multiselect(
+                    "Cities",
+                    options=get_unique_values(st.session_state.properties_df, 'city'),
+                    default=get_unique_values(st.session_state.properties_df, 'city')
+                )
             
-            # Apply sorting
-            if sort_by == "Price (Low to High)":
-                filtered_df = filtered_df.sort_values(by="price")
-            elif sort_by == "Price (High to Low)":
-                filtered_df = filtered_df.sort_values(by="price", ascending=False)
-            elif sort_by == "Bedrooms":
-                filtered_df = filtered_df.sort_values(by="bedrooms", ascending=False)
-            elif sort_by == "Bathrooms":
-                filtered_df = filtered_df.sort_values(by="bathrooms", ascending=False)
-            elif sort_by == "Square Feet":
-                filtered_df = filtered_df.sort_values(by="square_feet", ascending=False)
-            
-            # Display property cards in a grid (3 per row)
-            cols = st.columns(3)
-            for i, (_, property_row) in enumerate(filtered_df.iterrows()):
-                with cols[i % 3]:
-                    display_property_card(
-                        property_row,
-                        show_compare=True,
-                        show_favorite=True
+            # Apply filters
+            if st.session_state.properties_df is not None and not st.session_state.properties_df.empty:
+                filtered_df = filter_properties(
+                    st.session_state.properties_df,
+                    price_range,
+                    min_beds,
+                    min_baths,
+                    sources,
+                    cities,
+                    property_types
+                )
+                
+                # Calculate and display statistics
+                stats_df = get_statistics(filtered_df)
+                
+                # Display statistics in columns
+                stat_cols = st.columns(5)
+                with stat_cols[0]:
+                    st.metric("Total Properties", f"{len(filtered_df)}")
+                with stat_cols[1]:
+                    st.metric("Avg. Price", f"${stats_df['avg_price']:.0f}")
+                with stat_cols[2]:
+                    st.metric("Avg. Price/Sqft", f"${stats_df['avg_price_per_sqft']:.2f}")
+                with stat_cols[3]:
+                    st.metric("Avg. Bedrooms", f"{stats_df['avg_bedrooms']:.1f}")
+                with stat_cols[4]:
+                    st.metric("Avg. Bathrooms", f"{stats_df['avg_bathrooms']:.1f}")
+                
+                # Display sorted properties with pagination
+                st.markdown("### Results")
+                
+                # Add sorting options
+                sort_col, order_col = st.columns(2)
+                with sort_col:
+                    sort_by = st.selectbox(
+                        "Sort By",
+                        ["price", "bedrooms", "bathrooms", "square_feet", "data_quality_score"],
+                        index=0
                     )
-            
-            # Option to download results as CSV
-            st.download_button(
-                label="Download Results as CSV",
-                data=filtered_df.to_csv(index=False),
-                file_name="real_estate_listings.csv",
-                mime="text/csv",
-                key="download_results_csv_button"
-            )
-    else:
-        # Initial state or no data available
-        st.info("Use the sidebar controls to scrape real estate listings.")
-        
-        # Show a sample of what the app can do
-        st.header("How to use this app")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("1. Select websites and location")
-            st.markdown("""
-            - Choose one or more real estate websites to scrape
-            - Enter a location (city, state, or zip code)
-            - Set the maximum number of listings to retrieve
-            - Click "Scrape Listings" to start
-            """)
-        
-        with col2:
-            st.subheader("2. Filter and analyze results")
-            st.markdown("""
-            - Filter listings by price, bedrooms, bathrooms, etc.
-            - View statistics and visualizations
-            - Sort results by various criteria
-            - Download the data as a CSV file
-            """)
-            
+                
+                with order_col:
+                    sort_order = st.radio(
+                        "Order",
+                        ["Ascending", "Descending"],
+                        index=1,
+                        horizontal=True
+                    )
+                
+                is_ascending = sort_order == "Ascending"
+                
+                # Sort the dataframe
+                sorted_df = filtered_df.sort_values(by=sort_by, ascending=is_ascending)
+                
+                # Pagination controls
+                properties_per_page = 5
+                total_pages = (len(sorted_df) + properties_per_page - 1) // properties_per_page
+                
+                if total_pages > 1:
+                    page_col1, page_col2 = st.columns([3, 1])
+                    with page_col1:
+                        page = st.slider("Page", 1, max(1, total_pages), 1)
+                    with page_col2:
+                        st.write(f"Page {page} of {total_pages}")
+                else:
+                    page = 1
+                
+                # Calculate start and end indices
+                start_idx = (page - 1) * properties_per_page
+                end_idx = min(start_idx + properties_per_page, len(sorted_df))
+                
+                # Display properties for the current page
+                for i in range(start_idx, end_idx):
+                    property_data = sorted_df.iloc[i]
+                    property_link = property_data.get('url', '#')
+                    
+                    # Display the property card
+                    with st.container():
+                        display_property_card(property_data)
+                        
+                        # Create a row of buttons for actions
+                        col1, col2, col3 = st.columns([1, 1, 2])
+                        
+                        with col1:
+                            if st.button("View Details", key=f"view_{i}"):
+                                st.session_state.selected_property = {
+                                    'data': property_data,
+                                    'link': property_link
+                                }
+                                st.rerun()
+                        
+                        with col2:
+                            if st.button("Compare", key=f"compare_{i}"):
+                                # Add to comparison list if not already there
+                                property_dict = property_data.to_dict()
+                                if property_dict not in st.session_state.comparison_list:
+                                    st.session_state.comparison_list.append(property_dict)
+                                    st.success(f"Added property to comparison list! ({len(st.session_state.comparison_list)} properties)")
+                                    st.rerun()
+                                else:
+                                    st.warning("This property is already in your comparison list")
+                        
+                        with col3:
+                            if st.button("Add to Favorites ⭐", key=f"favorite_{i}"):
+                                # Add to favorites if not already there
+                                property_dict = property_data.to_dict()
+                                property_dict['url'] = property_link
+                                if property_dict not in st.session_state.favorites:
+                                    st.session_state.favorites.append(property_dict)
+                                    st.success(f"Added property to favorites! ({len(st.session_state.favorites)} favorites)")
+                                    st.rerun()
+                                else:
+                                    st.warning("This property is already in your favorites")
+                    
+                    # Add a separator between properties
+                    st.markdown("---")
+                
+                # Show export button when properties are available
+                if not filtered_df.empty:
+                    export_col1, export_col2 = st.columns([3, 1])
+                    with export_col1:
+                        st.markdown("### Export Options")
+                        
+                    with export_col2:
+                        if st.button("Export to Google Sheets", key="export_sheets_button"):
+                            st.session_state.export_data = filtered_df
+                            st.session_state.active_tab = "export"
+                            # Switch to the export tab
+                            st.rerun()
+            else:
+                st.warning("No properties found with the selected filters. Try adjusting your filters.")
+        else:
+            st.write("No properties found. Use the scraper controls in the sidebar to fetch property listings.")
+
 # Tab 2: Property Comparison
 with tab2:
     st.header("Property Comparison")
+    st.markdown("Compare properties side by side to help make the best investment decision.")
     
-    if 'compare_properties' in st.session_state and len(st.session_state.compare_properties) > 0:
-        # Display comparison of selected properties
-        display_interactive_comparison(st.session_state.compare_properties)
-    else:
-        # Show instructions if no properties are selected for comparison
-        st.info("Select properties to compare by using the 'Compare' checkbox on property cards")
+    if st.session_state.comparison_list:
+        # Create a dataframe from the comparison list
+        comparison_df = pd.DataFrame(st.session_state.comparison_list)
         
-        if 'properties_df' in st.session_state and not st.session_state.properties_df.empty:
-            st.write("Go to the Real Estate Scraper tab to start selecting properties for comparison")
-        else:
-            st.write("First scrape some listings using the Real Estate Scraper tab")
+        # Display the comparison table interactively
+        display_interactive_comparison(comparison_df)
+        
+        # Add a button to clear the comparison list
+        if st.button("Clear Comparison List", key="clear_comparison_button"):
+            st.session_state.comparison_list = []
+            st.rerun()
+    else:
+        st.info("Add properties to your comparison list from the scraper tab to see them compared side by side.")
 
 # Tab 3: Favorites
 with tab3:
-    st.header("My Favorites")
+    st.header("Favorites")
+    st.markdown("View and manage your saved favorite properties.")
     
-    if 'favorites' in st.session_state and len(st.session_state.favorites) > 0:
-        # Display favorited properties
+    if st.session_state.favorites:
+        # Show the favorites
         display_favorites_view(st.session_state.favorites)
-    else:
-        # Show instructions if no properties are favorited
-        st.info("You haven't added any properties to your favorites yet")
         
-        if 'properties_df' in st.session_state and not st.session_state.properties_df.empty:
+        # Add a button to clear favorites
+        if st.button("Clear All Favorites", key="clear_favorites_button"):
+            st.session_state.favorites = []
+            st.rerun()
+    else:
+        if not st.session_state.properties_df.empty:
             st.write("Go to the Real Estate Scraper tab to start adding favorites")
         else:
             st.write("First scrape some listings using the Real Estate Scraper tab")
 
-# Tab 4: Map View
+# Map View tab has been removed as requested
+
+# Tab 4: ROI Analysis
 with tab4:
-    st.header("Property Map View")
+    st.header("ROI Analysis")
     st.markdown("""
-    This interactive map shows the locations of all properties in your search results. 
-    Click on a property marker to view details about that property.
+    This tool helps you analyze the potential return on investment for real estate properties.
+    Enter property details to calculate key investment metrics such as cap rate, cash flow, and projected returns.
     """)
     
-    if 'properties_df' in st.session_state and not st.session_state.properties_df.empty:
-        # Get the property dataframe
-        properties_df = st.session_state.properties_df
+    # Create two columns for input and results
+    input_col, result_col = st.columns([1, 1])
+    
+    with input_col:
+        st.subheader("Property Details")
         
-        # Add filter options
-        st.subheader("Filter Properties for Map")
+        # Create a form for ROI analysis
+        with st.form(key="roi_form"):
+            # Basic property information
+            property_price = st.number_input("Property Price ($)", min_value=1000, value=500000, step=5000)
+            bedrooms = st.number_input("Bedrooms", min_value=0, max_value=10, value=3)
+            bathrooms = st.number_input("Bathrooms", min_value=0.0, max_value=10.0, value=2.0, step=0.5)
+            square_feet = st.number_input("Square Feet", min_value=100, value=1800, step=100)
+            property_type = st.selectbox(
+                "Property Type",
+                ["House", "Condo", "Townhouse", "Multi-Family", "Apartment", "Land", "Commercial"],
+                index=0
+            )
+            property_age = st.number_input("Property Age (years)", min_value=0, value=20, step=1)
+            
+            # Location quality (proxy for appreciation potential)
+            location_rating = st.slider(
+                "Location Quality (1-10)",
+                min_value=1,
+                max_value=10,
+                value=7,
+                help="Higher rating indicates better location (schools, amenities, employment opportunities)"
+            )
+            
+            st.subheader("Financing Details")
+            down_payment_pct = st.slider("Down Payment (%)", min_value=0, max_value=100, value=20)
+            interest_rate = st.slider("Interest Rate (%)", min_value=1.0, max_value=10.0, value=4.5, step=0.1)
+            loan_term = st.slider("Loan Term (years)", min_value=5, max_value=30, value=30, step=5)
+            
+            st.subheader("Income & Expenses")
+            monthly_rent_override = st.number_input(
+                "Monthly Rent ($, leave at 0 for estimate)", 
+                min_value=0, 
+                value=0, 
+                step=100,
+                help="Enter 0 to use an estimated rent based on property characteristics"
+            )
+            
+            vacancy_rate = st.slider("Vacancy Rate (%)", min_value=0.0, max_value=20.0, value=5.0, step=0.5)
+            property_tax_rate = st.slider("Property Tax Rate (%/year)", min_value=0.0, max_value=5.0, value=1.2, step=0.1)
+            insurance_rate = st.slider("Insurance Rate (%/year)", min_value=0.0, max_value=2.0, value=0.5, step=0.1)
+            maintenance_rate = st.slider("Maintenance (%/year)", min_value=0.0, max_value=5.0, value=1.0, step=0.1)
+            property_mgmt_rate = st.slider("Property Management (%/month)", min_value=0.0, max_value=15.0, value=8.0, step=0.5)
+            utilities = st.number_input("Monthly Utilities ($, if owner-paid)", min_value=0, value=0, step=10)
+            hoa_fees = st.number_input("Monthly HOA Fees ($)", min_value=0, value=0, step=10)
+            
+            st.subheader("Appreciation & Investment Horizon")
+            appreciation_override = st.slider(
+                "Annual Appreciation Rate (%, leave at 0 for estimate)", 
+                min_value=0.0, 
+                max_value=10.0, 
+                value=0.0, 
+                step=0.1,
+                help="Enter 0 to use an estimated appreciation rate based on property characteristics"
+            )
+            
+            investment_horizon = st.slider("Investment Horizon (years)", min_value=1, max_value=30, value=5)
+            
+            # Submit button
+            analyze_button = st.form_submit_button(label="Analyze Investment")
+    
+    with result_col:
+        if analyze_button:
+            st.subheader("Investment Analysis Results")
+            
+            # Create a property data dictionary
+            property_data = {
+                'price': property_price,
+                'bedrooms': bedrooms,
+                'bathrooms': bathrooms,
+                'square_feet': square_feet,
+                'property_type': property_type,
+                'property_age': property_age,
+                'location_quality': location_rating
+            }
+            
+            # Only use override values if they are non-zero
+            rental_yield = None if monthly_rent_override > 0 else None
+            appreciation_rate = None if appreciation_override > 0 else None
+            
+            # If overrides are provided, calculate the rates
+            if monthly_rent_override > 0:
+                annual_rent = monthly_rent_override * 12
+                rental_yield = (annual_rent / property_price) * 100
+            
+            if appreciation_override > 0:
+                appreciation_rate = appreciation_override
+            
+            # Calculate ROI metrics with additional parameters
+            roi_metrics = calculate_roi_metrics(
+                property_data, 
+                rental_yield_percent=rental_yield,
+                appreciation_rate=appreciation_rate,
+                down_payment_pct=down_payment_pct,
+                interest_rate=interest_rate,
+                loan_term_years=loan_term,
+                vacancy_rate=vacancy_rate,
+                property_tax_rate=property_tax_rate,
+                insurance_rate=insurance_rate,
+                maintenance_rate=maintenance_rate,
+                property_mgmt_rate=property_mgmt_rate,
+                monthly_utilities=utilities,
+                monthly_hoa=hoa_fees,
+                investment_horizon_years=investment_horizon
+            )
+            
+            # Display key metrics with visual indicators
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Monthly cash flow
+                monthly_cash_flow = roi_metrics['monthly_cash_flow']
+                st.metric(
+                    "Monthly Cash Flow", 
+                    f"${monthly_cash_flow:.2f}",
+                    delta=None,
+                    delta_color="normal"
+                )
+                
+                # Cap rate
+                cap_rate = roi_metrics['cap_rate']
+                st.metric(
+                    "Cap Rate", 
+                    f"{cap_rate:.2f}%",
+                    delta=None,
+                    delta_color="normal" 
+                )
+                
+                # Monthly mortgage payment
+                mortgage_payment = roi_metrics['mortgage_payment']
+                st.metric(
+                    "Monthly Mortgage", 
+                    f"${mortgage_payment:.2f}",
+                    delta=None,
+                    delta_color="normal"
+                )
+                
+                # Monthly expenses
+                monthly_expenses = roi_metrics['monthly_expenses']
+                st.metric(
+                    "Monthly Expenses", 
+                    f"${monthly_expenses:.2f}",
+                    delta=None,
+                    delta_color="normal"
+                )
+                
+            with col2:
+                # Cash on cash return
+                cash_on_cash = roi_metrics['cash_on_cash_return']
+                st.metric(
+                    "Cash on Cash Return", 
+                    f"{cash_on_cash:.2f}%",
+                    delta=None,
+                    delta_color="normal"
+                )
+                
+                # 5-year equity growth
+                equity_5yr = roi_metrics['equity_5yr']
+                st.metric(
+                    "Equity in 5 Years", 
+                    f"${equity_5yr:.2f}",
+                    delta=None,
+                    delta_color="normal"
+                )
+                
+                # Total return on investment
+                total_roi = roi_metrics['total_roi_pct']
+                st.metric(
+                    f"Total ROI ({investment_horizon} years)", 
+                    f"{total_roi:.2f}%",
+                    delta=None,
+                    delta_color="normal"
+                )
+                
+                # Annualized ROI
+                annualized_roi = roi_metrics['annualized_roi']
+                st.metric(
+                    "Annualized ROI", 
+                    f"{annualized_roi:.2f}%",
+                    delta=None,
+                    delta_color="normal"
+                )
+            
+            # Display a summary assessment
+            st.subheader("Investment Summary")
+            
+            # Determine overall assessment
+            if cash_on_cash >= 8 and cap_rate >= 6 and monthly_cash_flow > 0:
+                assessment = "Excellent Investment Opportunity"
+                assessment_color = "green"
+            elif cash_on_cash >= 5 and cap_rate >= 4 and monthly_cash_flow > 0:
+                assessment = "Good Investment Opportunity"
+                assessment_color = "blue"
+            elif monthly_cash_flow > 0:
+                assessment = "Fair Investment Opportunity"
+                assessment_color = "orange"
+            else:
+                assessment = "Poor Investment Opportunity"
+                assessment_color = "red"
+            
+            # Display colored assessment
+            st.markdown(f"<h3 style='color:{assessment_color}'>{assessment}</h3>", unsafe_allow_html=True)
+            
+            # List key strengths and weaknesses
+            strengths = []
+            weaknesses = []
+            
+            if cash_on_cash >= 8:
+                strengths.append("Strong cash on cash return")
+            elif cash_on_cash < 4:
+                weaknesses.append("Low cash on cash return")
+                
+            if cap_rate >= 6:
+                strengths.append("Strong cap rate")
+            elif cap_rate < 4:
+                weaknesses.append("Low cap rate")
+                
+            if monthly_cash_flow > 200:
+                strengths.append("Strong positive cash flow")
+            elif monthly_cash_flow < 0:
+                weaknesses.append("Negative cash flow")
+                
+            if total_roi > 50:
+                strengths.append(f"Strong total ROI over {investment_horizon} years")
+            elif total_roi < 20:
+                weaknesses.append(f"Low total ROI over {investment_horizon} years")
+            
+            # Display strengths and weaknesses
+            if strengths:
+                st.markdown("**Strengths:**")
+                for strength in strengths:
+                    st.markdown(f"- {strength}")
+                    
+            if weaknesses:
+                st.markdown("**Weaknesses:**")
+                for weakness in weaknesses:
+                    st.markdown(f"- {weakness}")
+            
+            # Add a disclaimer
+            st.caption("Note: These calculations are estimates based on the provided inputs. Actual results may vary based on market conditions, property management, and other factors.")
+            
+            # Display a chart showing cash flow over time
+            st.subheader("Cash Flow Projection")
+            
+            # Create data for the chart
+            years = list(range(1, investment_horizon + 1))
+            annual_cash_flows = [(roi_metrics['monthly_cash_flow'] * 12) * (1.03 ** (year - 1)) for year in years]
+            
+            # Create the chart
+            fig = px.bar(
+                x=years, 
+                y=annual_cash_flows,
+                labels={'x': 'Year', 'y': 'Annual Cash Flow ($)'},
+                title='Projected Annual Cash Flow'
+            )
+            
+            fig.update_traces(marker_color='blue')
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Display a table with year-by-year projections
+            st.subheader("Year-by-Year Projections")
+            
+            # Create projection data
+            projection_data = []
+            property_value = property_price
+            loan_balance = property_price * (1 - down_payment_pct / 100)
+            
+            for year in range(1, investment_horizon + 1):
+                # Calculate appreciation for this year
+                annual_appreciation_rate = appreciation_rate if appreciation_override > 0 else roi_metrics['appreciation_rate']
+                property_value *= (1 + annual_appreciation_rate / 100)
+                
+                # Calculate loan paydown
+                # Simple approximation of loan balance
+                if loan_balance > 0:
+                    annual_payment = mortgage_payment * 12
+                    annual_interest = loan_balance * (interest_rate / 100)
+                    principal_payment = min(annual_payment - annual_interest, loan_balance)
+                    loan_balance -= principal_payment
+                
+                # Calculate equity
+                equity = property_value - loan_balance
+                
+                # Calculate cash flow with small inflation adjustment for expenses
+                annual_cash_flow = annual_cash_flows[year-1]
+                
+                # Add to projection data
+                projection_data.append({
+                    'Year': year,
+                    'Property Value': f"${property_value:.2f}",
+                    'Loan Balance': f"${loan_balance:.2f}",
+                    'Equity': f"${equity:.2f}",
+                    'Annual Cash Flow': f"${annual_cash_flow:.2f}"
+                })
+            
+            # Create DataFrame and display
+            projection_df = pd.DataFrame(projection_data)
+            st.dataframe(projection_df, use_container_width=True)
+        else:
+            # Show instructions when first loading the tab
+            st.info("Enter property details in the form on the left and click 'Analyze Investment' to see results.")
+            
+            # Display educational content about investment metrics
+            st.subheader("Understanding Investment Metrics")
+            
+            metrics_expander = st.expander("Key Investment Metrics Explained", expanded=False)
+            with metrics_expander:
+                st.markdown("""
+                - **Cap Rate**: The ratio of net operating income (NOI) to property value. Higher values indicate better return potential.
+                - **Cash on Cash Return**: Annual cash flow divided by total cash invested. Measures the cash income earned on cash invested.
+                - **Cash Flow**: The money left over after all expenses and mortgage payments have been paid.
+                - **ROI (Return on Investment)**: The total return including appreciation and cash flow, expressed as a percentage of initial investment.
+                - **Equity Growth**: Increase in ownership value from loan paydown and property appreciation.
+                """)
+                
+            strategy_expander = st.expander("Investment Strategies", expanded=False)
+            with strategy_expander:
+                st.markdown("""
+                **Cash Flow Strategy**: Focus on properties with strong monthly cash flow. Look for:
+                - Cap rate above 6%
+                - Cash on cash return above 8%
+                - Positive monthly cash flow
+                
+                **Appreciation Strategy**: Focus on properties likely to increase in value. Look for:
+                - Properties in up-and-coming areas
+                - Areas with strong economic and population growth
+                - Properties where improvements can add significant value
+                
+                **Balanced Approach**: Look for properties with:
+                - Moderate cash flow (at least break-even)
+                - Good appreciation potential
+                - Opportunity to force appreciation through improvements
+                """)
+
+# Tab 5: Link Scraper
+with tab5:
+    st.header("Link Scraper")
+    st.markdown("""
+    This tool allows you to scrape links from any website. Enter a URL below to extract all links from that page.
+    You can use this to find property listings on websites not directly supported by the main scraper.
+    """)
+    
+    # Create a form for link scraping
+    with st.form(key="link_scraper_form"):
+        url = st.text_input("Website URL", placeholder="https://example.com")
+        max_links = st.slider("Maximum Number of Links", min_value=10, max_value=500, value=100)
+        same_domain_only = st.checkbox("Only scrape links from the same domain", value=True)
         
-        # Create columns for filters
-        filter_col1, filter_col2 = st.columns(2)
-        
-        with filter_col1:
-            # Price range filter
-            if not properties_df.empty:
-                min_price = int(properties_df['price'].min())
-                max_price = int(properties_df['price'].max())
-                price_range = st.slider(
-                    "Price Range ($)",
-                    min_price,
-                    max_price,
-                    (min_price, max_price),
-                    key="map_price_range"
+        # Advanced options
+        with st.expander("Advanced Options"):
+            link_pattern = st.text_input(
+                "Link Pattern (regex, optional)", 
+                placeholder="property|listing|home",
+                help="Optional regex pattern to filter links by. Example: 'property|listing|home' will only return links containing these words."
+            )
+            
+            use_specific_selector = st.checkbox("Use CSS Selector", value=False, 
+                                              help="Use a specific CSS selector to target only certain elements containing links")
+            
+            if use_specific_selector:
+                css_selector = st.text_input(
+                    "CSS Selector", 
+                    placeholder="div.property-listings a",
+                    help="CSS selector to target specific elements. Example: 'div.property-listings a' targets all anchor tags within elements with class 'property-listings'"
                 )
         
-        with filter_col2:
-            # Property type filter
-            prop_types = get_unique_values(properties_df, 'property_type')
-            selected_types = st.multiselect(
-                "Property Types",
-                prop_types,
-                default=prop_types,
-                key="map_property_types"
-            )
-        
-        # Apply filters
-        price_mask = (properties_df['price'] >= price_range[0]) & (properties_df['price'] <= price_range[1])
-        type_mask = properties_df['property_type'].isin(selected_types)
-        filtered_df = properties_df[price_mask & type_mask]
-        
-        # Display map statistics
-        data_count = len(filtered_df)
-        
-        if filtered_df.empty:
-            st.warning("No properties match your filters. Please adjust your criteria.")
-        else:
-            price_avg = filtered_df['price'].mean()
-            price_min = filtered_df['price'].min()
-            price_max = filtered_df['price'].max()
-            
-            # Display summary metrics
-            st.subheader("Map Statistics")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Properties", f"{data_count}")
-            with col2:
-                st.metric("Avg. Price", f"${price_avg:,.0f}")
-            with col3:
-                st.metric("Price Range", f"${price_min:,.0f} - ${price_max:,.0f}")
-            
-            # Show map
-            st.subheader("Property Locations")
-            display_property_map(filtered_df)
-            
-            # Explanatory note
-            st.caption("Note: Property locations are approximated based on address geocoding. Click on markers to see property details.")
-            
-            # Offer option to recalculate coordinates
-            if st.button("Refresh Map Coordinates", key="refresh_map_coordinates_button"):
-                with st.spinner("Updating property coordinates..."):
-                    # Force recalculate all coordinates
-                    updated_df = geocode_properties(properties_df)
-                    st.session_state.properties_df = updated_df
-                    st.rerun()
-    else:
-        # Show instructions if no properties available
-        st.info("No properties available for mapping")
-        
-        # Information and image about the map feature
-        st.markdown("""
-        To use the map view:
-        1. First scrape property listings using the Real Estate Scraper tab
-        2. The map will automatically display all properties in your search results
-        3. You can click on property markers to see detailed information
-        4. Use the cluster markers to navigate areas with many properties
-        """)
-        
-        # Show a sample image or further instructions
-        st.write("The map will show property markers clustered by location, allowing you to easily identify property hotspots.")
-
-# Tab 5: ROI Analysis
-with tab5:
-    st.header("AI-Powered ROI Analysis")
-    st.markdown("""
-    This tool uses AI to analyze potential Return on Investment (ROI) for real estate properties. 
-    It calculates estimated rental yields, cash flow, and long-term appreciation to help you make smarter investment decisions.
-    """)
+        # Submit button
+        scrape_links_button = st.form_submit_button(label="Scrape Links")
     
-    if 'properties_df' in st.session_state and not st.session_state.properties_df.empty:
-        # Property selector
-        st.subheader("Select Property to Analyze")
-        
-        # Display properties in a simple table to choose from
-        property_table = st.session_state.properties_df[['address', 'city', 'price', 'bedrooms', 'bathrooms', 'property_type', 'source']].copy()
-        st.dataframe(property_table, use_container_width=True)
-        
-        # User selects property by index
-        selected_idx = st.number_input("Enter row number of property to analyze", 
-                                       min_value=0, 
-                                       max_value=len(st.session_state.properties_df)-1 if len(st.session_state.properties_df) > 0 else 0,
-                                       value=0,
-                                       key="property_row_selector")
-        
-        # Get the selected property
-        selected_property = st.session_state.properties_df.iloc[selected_idx] if not st.session_state.properties_df.empty else None
-        
-        if selected_property is not None:
-            st.subheader("Property Details")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown(f"**Address:** {selected_property['address']}")
-                st.markdown(f"**City:** {selected_property['city'] if 'city' in selected_property and pd.notna(selected_property['city']) else 'N/A'}")
-                st.markdown(f"**Price:** {format_price(selected_property['price'])}")
-            
-            with col2:
-                st.markdown(f"**Bedrooms:** {selected_property['bedrooms']}")
-                st.markdown(f"**Bathrooms:** {selected_property['bathrooms']}")
-                st.markdown(f"**Property Type:** {selected_property['property_type']}")
-            
-            # ROI parameters customization
-            st.subheader("Investment Parameters")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Allow user to override estimated values
-                default_yield = estimate_rental_yield(selected_property)
-                rental_yield = st.number_input("Annual Rental Yield (%)", 
-                                            min_value=1.0, 
-                                            max_value=15.0, 
-                                            value=default_yield,
-                                            step=0.1,
-                                            format="%.1f",
-                                            key="rental_yield_input")
-                
-                st.caption(f"Estimated rental yield for this property is {default_yield:.1f}%")
-            
-            with col2:
-                default_appreciation = estimate_appreciation_rate(selected_property)
-                appreciation_rate = st.number_input("Annual Appreciation Rate (%)", 
-                                                min_value=0.0, 
-                                                max_value=10.0, 
-                                                value=default_appreciation,
-                                                step=0.1,
-                                                format="%.1f",
-                                                key="appreciation_rate_input")
-                
-                st.caption(f"Estimated appreciation rate for this area is {default_appreciation:.1f}%")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                down_payment_pct = st.slider("Down Payment (%)", 
-                                            min_value=5, 
-                                            max_value=100, 
-                                            value=20,
-                                            key="down_payment_slider")
-            
-            with col2:
-                interest_rate = st.slider("Mortgage Interest Rate (%)", 
-                                        min_value=2.0, 
-                                        max_value=10.0, 
-                                        value=6.5,
-                                        step=0.1,
-                                        key="interest_rate_slider")
-            
-            # Calculate ROI
-            if st.button("Calculate ROI", key="calculate_roi_button"):
-                with st.spinner("Analyzing investment potential..."):
-                    # Override default values in the property data for calculation
-                    property_data = selected_property.copy()
-                    
-                    # Calculate ROI metrics
-                    roi_metrics = calculate_roi_metrics(property_data, rental_yield, appreciation_rate)
-                    
-                    # Display results
-                    st.subheader("ROI Analysis Results")
-                    
-                    # Create metrics display
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        st.metric("Annual Rental Yield", f"{roi_metrics['rental_yield']:.1f}%")
-                        st.metric("Monthly Cash Flow", f"${roi_metrics['monthly_cash_flow']:,.2f}")
-                    
-                    with col2:
-                        annual_rental = roi_metrics['annual_rental_income']
-                        st.metric("Annual Rental Income", f"${annual_rental:,.0f}")
-                        st.metric("5-Year ROI", f"{roi_metrics['roi_5yr']:.1f}%")
-                    
-                    with col3:
-                        current_price = selected_property['price']
-                        future_value = roi_metrics['five_year_value']
-                        appreciation_value = future_value - current_price
-                        st.metric("5-Year Value", f"${future_value:,.0f}", 
-                                 delta=f"${appreciation_value:,.0f}")
-                        st.metric("Appreciation Rate", f"{roi_metrics['appreciation_rate']:.1f}%/year")
-                    
-                    # Investment recommendation
-                    st.subheader("Investment Recommendation")
-                    
-                    # Format the recommendation with colorful background
-                    recommendation = roi_metrics['investment_recommendation']
-                    if "excellent" in recommendation.lower():
-                        st.success(recommendation)
-                    elif "good" in recommendation.lower():
-                        st.info(recommendation)
-                    elif "average" in recommendation.lower():
-                        st.warning(recommendation)
-                    else:
-                        st.error(recommendation)
-                    
-                    # Show detailed analysis
-                    with st.expander("Detailed Analysis"):
-                        st.markdown("""
-                        ### Methodology
-                        
-                        This analysis is based on the following calculations:
-                        
-                        - **Monthly Rental Income**: Estimated based on property characteristics and location
-                        - **Monthly Expenses**: Estimated at 40% of rental income (taxes, insurance, maintenance, vacancy)
-                        - **Mortgage Payment**: Calculated based on purchase price, down payment, and interest rate
-                        - **Cash Flow**: Rental income minus expenses and mortgage payment
-                        - **Appreciation**: Estimated based on location, property type, and market trends
-                        - **5-Year ROI**: (5-year appreciation + 5-year cash flow) / initial investment
-                        
-                        > This is an estimate based on available data and should be used as a starting point for further due diligence.
-                        """)
-    else:
-        # No properties available
-        st.info("No properties available for analysis. Please use the Real Estate Scraper tab to find properties first.")
-        
-        # Show a sample of what the tool can do
-        st.subheader("How This Tool Works")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("""
-            **This tool helps you:**
-            
-            - Calculate potential rental income for properties
-            - Estimate monthly cash flow after expenses
-            - Project property value appreciation over time
-            - Determine overall investment return (ROI)
-            - Get AI-powered investment recommendations
-            """)
-        
-        with col2:
-            st.markdown("""
-            **The analysis considers:**
-            
-            - Property location and market trends
-            - Property type and characteristics
-            - Current interest rates and financing options
-            - Typical operating expenses
-            - Long-term appreciation potential
-            """)
-
-# Tab 6: Link Scraper
-with tab6:
-    st.header("Website Link Scraper")
-    st.markdown("This tool allows you to extract links from any website for further analysis.")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # URL input and scraping controls
-        url = st.text_input("Website URL", "https://www.example.com", key="link_scraper_url_input")
-        max_links = st.slider("Maximum number of links to extract", 10, 500, 100, key="max_links_slider")
-        same_domain_only = st.checkbox("Only links from same domain", value=True, key="same_domain_checkbox")
-        
-        # Optional pattern filter
-        link_pattern = st.text_input("Filter links by pattern (regex, optional)", "")
-        
-        # CSS selector for specific links
-        use_css_selector = st.checkbox("Use CSS selector to find specific links", value=False)
-        css_selector = st.text_input("CSS Selector (e.g., 'a.listing-link')", "", disabled=not use_css_selector)
-        
-    with col2:
-        # Add some helpful information
-        st.subheader("Tips")
-        st.markdown("""
-        - Enter a complete URL including 'https://'
-        - CSS selectors are useful for targeting specific types of links
-        - Examples:
-            - `a.product-link` - links with class 'product-link'
-            - `.listings a` - links inside elements with class 'listings'
-            - `#main-content a` - links inside element with ID 'main-content'
-        """)
-    
-    # Scrape button
-    scrape_links_button = st.button("Scrape Links", key="scrape_links_button")
-    
+    # Handle link scraping
     if scrape_links_button:
         if not url:
-            st.error("Please enter a valid URL")
+            st.error("Please enter a URL to scrape")
         else:
-            with st.spinner("Scraping links... This may take a moment"):
+            with st.spinner(f"Scraping links from {url}..."):
                 try:
-                    if use_css_selector and css_selector:
-                        st.session_state.links_df = extract_specific_links(
-                            url, css_selector, max_links, link_pattern
-                        )
+                    # Call the appropriate scraping function based on user selection
+                    if use_specific_selector and css_selector:
+                        links_df = extract_specific_links(url, css_selector, max_links, link_pattern)
+                        scrape_method = f"CSS Selector: '{css_selector}'"
                     else:
-                        st.session_state.links_df = scrape_links(
-                            url, max_links, link_pattern, same_domain_only
-                        )
+                        links_df = scrape_links(url, max_links, link_pattern, same_domain_only)
+                        scrape_method = "General link extraction"
                     
-                    st.session_state.links_scrape_status = f"Successfully scraped {len(st.session_state.links_df)} links"
-                    st.success(f"Successfully scraped {len(st.session_state.links_df)} links!")
+                    # Display results
+                    if not links_df.empty:
+                        st.success(f"Successfully scraped {len(links_df)} links!")
+                        
+                        # Display a summary
+                        st.subheader("Scraping Summary")
+                        st.markdown(f"""
+                        - **Source URL:** {url}
+                        - **Links Found:** {len(links_df)}
+                        - **Method:** {scrape_method}
+                        - **Link Pattern Filter:** {link_pattern if link_pattern else "None"}
+                        - **Same Domain Only:** {"Yes" if same_domain_only else "No"}
+                        """)
+                        
+                        # Create tabs for different views
+                        link_tab1, link_tab2, link_tab3 = st.tabs(["Table View", "List View", "Analysis"])
+                        
+                        # Table view
+                        with link_tab1:
+                            st.dataframe(links_df, use_container_width=True)
+                            
+                        # List view
+                        with link_tab2:
+                            for idx, row in links_df.iterrows():
+                                st.markdown(f"{idx+1}. [{row['text'] if row['text'] else row['url']}]({row['url']})")
+                        
+                        # Analysis view
+                        with link_tab3:
+                            # Analyze domains
+                            if 'domain' in links_df.columns:
+                                domain_counts = links_df['domain'].value_counts()
+                                
+                                # Display domain distribution
+                                st.subheader("Domain Distribution")
+                                
+                                # Create a bar chart
+                                fig = px.bar(
+                                    x=domain_counts.index, 
+                                    y=domain_counts.values,
+                                    labels={'x': 'Domain', 'y': 'Count'},
+                                    title='Link Distribution by Domain'
+                                )
+                                
+                                st.plotly_chart(fig, use_container_width=True)
+                            
+                            # Analyze link text
+                            if 'text' in links_df.columns:
+                                # Filter out empty text
+                                text_df = links_df[links_df['text'].notna() & (links_df['text'] != '')]
+                                
+                                if not text_df.empty:
+                                    # Display common words in link text
+                                    st.subheader("Common Words in Link Text")
+                                    
+                                    # Extract words and count frequencies
+                                    all_text = ' '.join(text_df['text'].str.lower())
+                                    words = all_text.split()
+                                    word_counts = {}
+                                    
+                                    # Filter out very common words
+                                    stop_words = ['a', 'the', 'and', 'of', 'to', 'in', 'is', 'it', 'that', 'for', 'on', 'with']
+                                    
+                                    for word in words:
+                                        # Clean the word
+                                        word = word.strip('.,!?()[]{}"\'')
+                                        if word and len(word) > 2 and word not in stop_words:
+                                            if word in word_counts:
+                                                word_counts[word] += 1
+                                            else:
+                                                word_counts[word] = 1
+                                    
+                                    # Sort by frequency
+                                    sorted_words = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)
+                                    
+                                    # Display the top words
+                                    top_words = sorted_words[:20]
+                                    words_df = pd.DataFrame(top_words, columns=['Word', 'Frequency'])
+                                    
+                                    fig = px.bar(
+                                        words_df,
+                                        x='Word',
+                                        y='Frequency',
+                                        title='Top 20 Words in Link Text'
+                                    )
+                                    
+                                    st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Export options
+                        st.subheader("Export Options")
+                        export_col1, export_col2 = st.columns(2)
+                        
+                        with export_col1:
+                            if st.button("Export to Google Sheets", key="export_links_sheets_button"):
+                                st.session_state.export_data = links_df
+                                st.session_state.active_tab = "export"
+                                st.rerun()
+                        
+                        with export_col2:
+                            # Create a CSV download button
+                            @st.cache_data
+                            def convert_df_to_csv(df):
+                                return df.to_csv(index=False).encode('utf-8')
+                            
+                            csv = convert_df_to_csv(links_df)
+                            st.download_button(
+                                label="Download CSV",
+                                data=csv,
+                                file_name="scraped_links.csv",
+                                mime="text/csv",
+                                key="download_links_csv"
+                            )
+                    else:
+                        st.warning("No links found. Try adjusting your scraping parameters.")
                 except Exception as e:
                     st.error(f"Error scraping links: {str(e)}")
-                    st.session_state.links_scrape_status = f"Error: {str(e)}"
-    
-    # Display the last scrape status
-    if st.session_state.links_scrape_status:
-        st.info(st.session_state.links_scrape_status)
-    
-    # Display results if available
-    if not st.session_state.links_df.empty:
-        st.header("Results")
-        
-        # Filter options
-        st.subheader("Filter Links")
-        filter_text = st.text_input("Filter by text contained in URL or title", key="link_filter_text_input")
-        
-        filtered_links_df = st.session_state.links_df
-        if filter_text:
-            mask = (
-                filtered_links_df['url'].str.contains(filter_text, case=False, na=False) | 
-                filtered_links_df['title'].str.contains(filter_text, case=False, na=False)
-            )
-            filtered_links_df = filtered_links_df[mask]
-        
-        # Display the dataframe
-        st.dataframe(filtered_links_df, use_container_width=True)
-        
-        # Download options
-        st.download_button(
-            label="Download as CSV",
-            data=filtered_links_df.to_csv(index=False),
-            file_name="scraped_links.csv",
-            mime="text/csv",
-            key="download_links_csv_button"
-        )
-        
-        # Export to Google Sheets button
-        if st.button("Export to Google Sheets", key="links_export_to_sheets_button"):
-            st.markdown("""
-            **Google Sheets Integration**
-            
-            To export data to Google Sheets, you need to provide Google API credentials.
-            """)
-            
-            # We'll implement this in the Google Sheets tab
 
-# Tab 7: Google Sheets Export
-with tab7:
+# Tab 6: Google Sheets Export
+with tab6:
     st.header("Google Sheets Export")
-    st.markdown("Export your scraped data to Google Sheets for easier sharing and collaboration.")
+    st.markdown("""
+    Export property data to Google Sheets for further analysis or sharing with others.
+    You can export either your scraped listings or your comparison list.
+    """)
     
-    # Set up the credentials
-    credentials_json = st.text_area(
-        "Google API Credentials (JSON)",
-        placeholder="Paste your Google Service Account credentials JSON here",
-        height=150,
-        key="google_credentials_input"
-    )
+    # Check if we have data to export
+    has_property_data = not st.session_state.properties_df.empty
+    has_comparison_data = len(st.session_state.comparison_list) > 0
+    has_favorite_data = len(st.session_state.favorites) > 0
+    has_link_data = hasattr(st.session_state, 'export_data') and not st.session_state.export_data.empty
     
-    # Create columns for data source selection and export options
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Data Source")
-        data_source = st.radio(
-            "Select data to export",
-            ["Real Estate Listings", "Scraped Links"],
-            disabled=st.session_state.properties_df.empty and st.session_state.links_df.empty,
-            key="export_data_source_radio"
-        )
-        
-        # Show a preview of the selected data
-        if data_source == "Real Estate Listings" and not st.session_state.properties_df.empty:
-            st.write("Preview (first 5 rows):")
-            st.dataframe(st.session_state.properties_df.head(5), use_container_width=True)
-        elif data_source == "Scraped Links" and not st.session_state.links_df.empty:
-            st.write("Preview (first 5 rows):")
-            st.dataframe(st.session_state.links_df.head(5), use_container_width=True)
-        else:
-            st.info("No data available for the selected source. Please use the scrapers first.")
-            
-    with col2:
-        st.subheader("Export Options")
-        
-        # Spreadsheet options
-        new_spreadsheet = st.checkbox("Create new spreadsheet", value=True, key="new_spreadsheet_checkbox")
-        
-        if new_spreadsheet:
-            spreadsheet_name = st.text_input("New spreadsheet name", "Real Estate Data", key="new_spreadsheet_name_input")
-            spreadsheet_id = None
-        else:
-            # Would provide a dropdown of existing spreadsheets here
-            spreadsheet_id = st.text_input("Existing spreadsheet ID", key="existing_spreadsheet_id_input")
-            spreadsheet_name = None
-        
-        worksheet_name = st.text_input("Worksheet name", "Data", key="worksheet_name_input")
-        append_data = st.checkbox("Append to existing data in worksheet", value=False, key="append_data_checkbox")
-    
-    # Export button
-    export_button = st.button(
-        "Export to Google Sheets",
-        key="export_to_sheets_button",
-        disabled=(
-            st.session_state.properties_df.empty and st.session_state.links_df.empty
-            or not credentials_json
-            or (not new_spreadsheet and not spreadsheet_id)
-        )
-    )
-    
-    if export_button:
-        with st.spinner("Exporting to Google Sheets..."):
-            try:
-                # Select the correct dataframe based on user choice
-                if data_source == "Real Estate Listings":
-                    export_df = st.session_state.properties_df
-                else:  # Scraped Links
-                    export_df = st.session_state.links_df
-                
-                # Call the export function
-                result = export_dataframe_to_sheet(
-                    export_df,
-                    credentials_json=credentials_json,
-                    spreadsheet_name=spreadsheet_name,
-                    spreadsheet_id=spreadsheet_id,
-                    worksheet_name=worksheet_name,
-                    append=append_data
-                )
-                
-                if "error" not in result:
-                    st.success("Data successfully exported to Google Sheets!")
-                    st.markdown(f"[Open Spreadsheet]({result['spreadsheet_url']})")
-                    
-                    # Save the credentials for future use
-                    st.session_state.google_credentials = credentials_json
-                else:
-                    st.error(f"Export failed: {result['error']}")
-            except Exception as e:
-                st.error(f"Error during export: {str(e)}")
-                
-# Tab 8: Stock Viewer
-with tab8:
-    st.header("Stock Market Viewer")
-    st.markdown("Monitor stock performance and analyze market trends to inform your real estate investment decisions.")
-    
-    # Stock selection
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        # Stock symbols input - limit to 5 for performance
-        symbols_input = st.text_input(
-            "Stock Symbols (comma-separated, max 5)",
-            value=",".join(st.session_state.stock_symbols)
-        )
-        
-        # Parse the input symbols and limit to 5
-        input_symbols = [s.strip() for s in symbols_input.split(",") if s.strip()][:5]
-        if input_symbols:
-            st.session_state.stock_symbols = input_symbols
-        
-        # Date range selection with optimized default
-        date_col1, date_col2 = st.columns(2)
-        with date_col1:
-            # Default to 90 days for better performance
-            default_days = 90
-            start_date = st.date_input(
-                "Start Date", 
-                value=dt.datetime.now() - dt.timedelta(days=default_days)
+    # Check if any data is available for export
+    if has_property_data or has_comparison_data or has_favorite_data or has_link_data:
+        # Create a form for export
+        with st.form(key="sheet_export_form"):
+            # Data source selection
+            data_source = st.radio(
+                "Select Data to Export",
+                ["Scraped Properties", "Comparison List", "Favorites", "Custom Data"],
+                index=0 if has_property_data else (1 if has_comparison_data else (2 if has_favorite_data else 3)),
+                disabled=False
             )
-        with date_col2:
-            end_date = st.date_input("End Date", value=dt.datetime.now())
             
-    with col2:
-        # Chart type selection
-        chart_type = st.selectbox(
-            "Chart Type",
-            ["Closing Price", "Candlestick", "Volume", "Returns"]
-        )
+            # Sheet name
+            spreadsheet_name = st.text_input(
+                "Google Sheet Name", 
+                value=f"Real Estate Data - {dt.datetime.now().strftime('%Y-%m-%d')}"
+            )
+            
+            # Option to append to existing sheet
+            append_option = st.checkbox("Append to existing sheet (if available)", value=False)
+            
+            # Submit button
+            export_button = st.form_submit_button(label="Export to Google Sheets")
         
-        # Comparison option
-        compare_stocks = st.checkbox("Compare Performance", value=True)
-        
-        # Fetch button
-        fetch_data = st.button("Fetch Stock Data", key="fetch_stock_data_button")
-    
-    # Check date range and warn if too large
-    date_diff = (end_date - start_date).days
-    if date_diff > 180:
-        st.warning("⚠️ Large date ranges (>180 days) may cause slower performance. Consider reducing the range for faster loading.")
-    
-    # Fetch data
-    if fetch_data or not st.session_state.stock_data.empty:
-        if fetch_data:
-            with st.spinner("Fetching stock data..."):
-                try:
-                    # Convert dates to string format
-                    start_date_str = start_date.strftime('%Y-%m-%d')
-                    end_date_str = end_date.strftime('%Y-%m-%d')
-                    
-                    # Fetch data for all symbols with improved performance settings
-                    stock_data = yf.download(
-                        st.session_state.stock_symbols,
-                        start=start_date_str,
-                        end=end_date_str,
-                        group_by='column',
-                        interval='1d',
-                        threads=False,  # Disable threading for more reliable results
-                        progress=False
-                    )
-                    
-                    # Store in session state
-                    st.session_state.stock_data = stock_data
-                    st.success(f"Successfully fetched data for {', '.join(st.session_state.stock_symbols)}")
-                except Exception as e:
-                    st.error(f"Error fetching stock data: {str(e)}")
-        
-        if not st.session_state.stock_data.empty:
-            # Show charts based on selection
-            if chart_type == "Closing Price" and compare_stocks:
-                # Show comparative closing prices
-                if len(st.session_state.stock_symbols) > 1:
-                    st.subheader("Comparative Stock Performance")
-                    
-                    # Extract closing prices
-                    closing_prices = st.session_state.stock_data['Close']
-                    
-                    # Create normalized chart (percentage change)
-                    normalized = closing_prices.copy()
-                    for symbol in st.session_state.stock_symbols:
-                        if symbol in normalized.columns:
-                            normalized[symbol] = normalized[symbol] / normalized[symbol].iloc[0] * 100
-                    
-                    # Create a simpler, faster figure
-                    fig = go.Figure()
-                    
-                    for symbol in st.session_state.stock_symbols:
-                        if symbol in normalized.columns:
-                            fig.add_trace(go.Scatter(
-                                x=normalized.index,
-                                y=normalized[symbol],
-                                mode='lines',
-                                name=symbol
-                            ))
-                    
-                    fig.update_layout(
-                        title="Normalized Stock Performance (Starting Value = 100%)",
-                        xaxis_title="Date",
-                        yaxis_title="Performance (%)",
-                        legend_title="Stocks",
-                        height=450,
-                        hovermode="x unified",    # More efficient hover mode
-                        template="simple_white"   # Lighter template for better performance
-                    )
-                    
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.info("Please select multiple stocks to compare performance.")
+        # Handle export
+        if export_button:
+            # Prepare the data for export
+            if data_source == "Scraped Properties" and has_property_data:
+                export_df = st.session_state.properties_df
+            elif data_source == "Comparison List" and has_comparison_data:
+                export_df = pd.DataFrame(st.session_state.comparison_list)
+            elif data_source == "Favorites" and has_favorite_data:
+                export_df = pd.DataFrame(st.session_state.favorites)
+            elif data_source == "Custom Data" and has_link_data:
+                export_df = st.session_state.export_data
+            else:
+                st.error("No data available for the selected source.")
+                export_df = None
             
-            # Individual stock details
-            st.subheader("Individual Stock Analysis")
-            
-            # Create tabs for each stock
-            stock_tabs = st.tabs(st.session_state.stock_symbols)
-            
-            for i, symbol in enumerate(st.session_state.stock_symbols):
-                with stock_tabs[i]:
-                    # Check if data exists for this symbol
-                    has_data = False
-                    
-                    if len(st.session_state.stock_symbols) > 1:
-                        # Multi-stock dataframe
-                        if symbol in st.session_state.stock_data['Close'].columns:
-                            has_data = True
-                            stock_df = pd.DataFrame({
-                                'Open': st.session_state.stock_data['Open'][symbol],
-                                'High': st.session_state.stock_data['High'][symbol],
-                                'Low': st.session_state.stock_data['Low'][symbol],
-                                'Close': st.session_state.stock_data['Close'][symbol],
-                                'Volume': st.session_state.stock_data['Volume'][symbol]
-                            })
-                    else:
-                        # Single stock dataframe
-                        has_data = True
-                        stock_df = st.session_state.stock_data.copy()
-                    
-                    if has_data:
-                        # Stock info
-                        try:
-                            stock_info = yf.Ticker(symbol).info
-                            if stock_info:
-                                col1, col2, col3 = st.columns(3)
-                                
-                                with col1:
-                                    if 'currentPrice' in stock_info:
-                                        st.metric(
-                                            "Current Price", 
-                                            f"${stock_info['currentPrice']:.2f}",
-                                            f"{stock_info.get('regularMarketChangePercent', 0):.2f}%"
-                                        )
-                                
-                                with col2:
-                                    if 'fiftyTwoWeekHigh' in stock_info and 'fiftyTwoWeekLow' in stock_info:
-                                        st.metric(
-                                            "52 Week Range", 
-                                            f"${stock_info['fiftyTwoWeekHigh']:.2f}",
-                                            f"Low: ${stock_info['fiftyTwoWeekLow']:.2f}"
-                                        )
-                                
-                                with col3:
-                                    if 'marketCap' in stock_info:
-                                        market_cap_b = stock_info['marketCap'] / 1e9
-                                        st.metric("Market Cap", f"${market_cap_b:.2f}B")
-                        except Exception as e:
-                            st.warning(f"Could not fetch additional info: {str(e)}")
+            # Process the export
+            if export_df is not None and not export_df.empty:
+                with st.spinner("Exporting to Google Sheets..."):
+                    try:
+                        # Execute the export
+                        result = export_dataframe_to_sheet(
+                            export_df,
+                            spreadsheet_name=spreadsheet_name,
+                            append=append_option
+                        )
                         
-                        # Create chart based on selection
-                        if chart_type == "Closing Price":
-                            # Check if stock_df has multi-index columns (happens with multiple symbols)
-                            if isinstance(stock_df.columns, pd.MultiIndex):
-                                # When we have a multi-index DataFrame
-                                fig = px.line(
-                                    stock_df, 
-                                    x=stock_df.index, 
-                                    y=('Close', symbol) if ('Close', symbol) in stock_df.columns else stock_df.columns[0],
-                                    title=f"{symbol} Closing Price"
-                                )
-                            else:
-                                # When we have a regular DataFrame
-                                fig = px.line(
-                                    stock_df, 
-                                    x=stock_df.index, 
-                                    y='Close' if 'Close' in stock_df.columns else stock_df.columns[0],
-                                    title=f"{symbol} Closing Price"
-                                )
-                            st.plotly_chart(fig, use_container_width=True)
+                        if "error" not in result:
+                            st.success("Export successful!")
                             
-                        elif chart_type == "Candlestick":
-                            # Get column names based on DataFrame structure
-                            if isinstance(stock_df.columns, pd.MultiIndex):
-                                open_col = ('Open', symbol) if ('Open', symbol) in stock_df.columns else stock_df.columns[0]
-                                high_col = ('High', symbol) if ('High', symbol) in stock_df.columns else stock_df.columns[1]
-                                low_col = ('Low', symbol) if ('Low', symbol) in stock_df.columns else stock_df.columns[2]
-                                close_col = ('Close', symbol) if ('Close', symbol) in stock_df.columns else stock_df.columns[3]
-                            else:
-                                open_col = 'Open'
-                                high_col = 'High'
-                                low_col = 'Low'
-                                close_col = 'Close'
+                            # Display the URL
+                            st.markdown(f"**Sheet URL:** [{result['spreadsheet_url']}]({result['spreadsheet_url']})")
                             
-                            # For large datasets, show a subset of data points for better performance
-                            display_df = stock_df
-                            if len(stock_df) > 100:
-                                # Only show last 100 data points for faster rendering
-                                display_df = stock_df.iloc[-100:]
-                                st.caption(f"Showing most recent 100 days for better performance (full period: {len(stock_df)} days)")
-                                
-                            fig = go.Figure(data=[go.Candlestick(
-                                x=display_df.index,
-                                open=display_df[open_col],
-                                high=display_df[high_col],
-                                low=display_df[low_col],
-                                close=display_df[close_col],
-                                name=symbol
-                            )])
-                            
-                            fig.update_layout(
-                                title=f"{symbol} Stock Price",
-                                xaxis_title="Date",
-                                yaxis_title="Price ($)",
-                                height=450,
-                                xaxis_rangeslider_visible=False,  # Hide rangeslider for better performance
-                                template="simple_white"  # Lighter template for better performance
-                            )
-                            
-                            st.plotly_chart(fig, use_container_width=True)
-                            
-                        elif chart_type == "Volume":
-                            # Determine volume column based on DataFrame structure
-                            if isinstance(stock_df.columns, pd.MultiIndex):
-                                vol_col = ('Volume', symbol) if ('Volume', symbol) in stock_df.columns else stock_df.columns[4]
-                            else:
-                                vol_col = 'Volume'
-                                
-                            # For large datasets, downsample to weekly for better performance
-                            if len(stock_df) > 90:
-                                resampled = stock_df.resample('W').agg({vol_col: 'sum'})
-                                fig = px.bar(
-                                    resampled, 
-                                    x=resampled.index, 
-                                    y=vol_col,
-                                    title=f"{symbol} Weekly Trading Volume"
-                                )
-                                fig.update_layout(height=450, hovermode="x unified")
-                            else:
-                                fig = px.bar(
-                                    stock_df, 
-                                    x=stock_df.index, 
-                                    y=vol_col,
-                                    title=f"{symbol} Trading Volume"
-                                )
-                                fig.update_layout(height=450)
-                            st.plotly_chart(fig, use_container_width=True)
-                            
-                        elif chart_type == "Returns":
-                            # Determine close column based on DataFrame structure
-                            if isinstance(stock_df.columns, pd.MultiIndex):
-                                close_col = ('Close', symbol) if ('Close', symbol) in stock_df.columns else stock_df.columns[3]
-                            else:
-                                close_col = 'Close'
-                                
-                            # For large datasets, downsample for better performance
-                            display_df = stock_df
-                            if len(stock_df) > 180:
-                                # Only show recent data for better performance
-                                display_df = stock_df.iloc[-180:]
-                                st.caption(f"Showing most recent 180 days for better performance (full period: {len(stock_df)} days)")
-                            
-                            # Calculate daily returns
-                            returns = display_df[close_col].pct_change() * 100
-                            returns = returns.dropna()  # Remove NaN values
-                            
-                            # Add some summary statistics
-                            col1, col2, col3 = st.columns(3)
-                            with col1:
-                                st.metric("Avg. Daily Return", f"{returns.mean():.2f}%")
-                            with col2:
-                                st.metric("Volatility", f"{returns.std():.2f}%")
-                            with col3:
-                                st.metric("Max Daily Change", f"{returns.abs().max():.2f}%")
-                            
-                            # Create optimized figure
-                            fig = go.Figure()
-                            fig.add_trace(go.Scatter(
-                                x=returns.index, 
-                                y=returns,
-                                mode='lines',
-                                name='Daily Returns',
-                                line=dict(width=1.5)  # Thinner line for better performance
-                            ))
-                            
-                            fig.update_layout(
-                                title=f"{symbol} Daily Returns (%)",
-                                xaxis_title="Date",
-                                yaxis_title="Returns (%)",
-                                height=450,
-                                hovermode="x unified",
-                                template="simple_white"  # Lighter template for better performance
-                            )
-                            
-                            st.plotly_chart(fig, use_container_width=True)
-                        
-                        # Show recent data - optimized display
-                        with st.expander("View Recent Data", expanded=False):
-                            # Use more efficient display with limited columns
-                            display_cols = ['Open', 'High', 'Low', 'Close', 'Volume'] 
-                            if isinstance(stock_df.columns, pd.MultiIndex):
-                                # Handle multi-index columns
-                                display_df = pd.DataFrame()
-                                for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-                                    if (col, symbol) in stock_df.columns:
-                                        display_df[col] = stock_df[(col, symbol)]
-                                st.dataframe(display_df.tail(7), use_container_width=True)
-                            else:
-                                # Regular DataFrame
-                                st.dataframe(stock_df[display_cols].tail(7), use_container_width=True)
-                    else:
-                        st.warning(f"No data available for {symbol}")
+                            # Display additional info
+                            st.markdown(f"""
+                            - **Spreadsheet Name:** {result['spreadsheet_name']}
+                            - **Worksheet Name:** {result['worksheet_name']}
+                            - **Rows Exported:** {result['rows_exported']}
+                            - **Columns Exported:** {result['columns_exported']}
+                            """)
+                        else:
+                            st.error(f"Export failed: {result['error']}")
+                    except Exception as e:
+                        st.error(f"Error during export: {str(e)}")
     else:
-        # Information message
-        st.info("Enter stock symbols and click 'Fetch Stock Data' to view stock information and charts.")
+        st.info("No data available for export. Scrape some properties or add items to your comparison list first.")

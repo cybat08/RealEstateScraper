@@ -609,13 +609,26 @@ def display_property_map(properties_df):
         st.warning("Could not geocode any property addresses. Map cannot be displayed.")
         return
     
-    # Add view type selector
-    view_type = st.radio(
-        "Map View Type", 
-        ["Markers", "Heatmap", "Both"],
-        key="map_view_type",
-        horizontal=True
-    )
+    # Create columns for layout
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        # Add view type selector
+        view_type = st.radio(
+            "Map View Type", 
+            ["Markers", "Heatmap", "Both"],
+            key="map_view_type",
+            horizontal=True
+        )
+    
+    with col2:
+        # Show price range legend
+        st.markdown("**Price Legend:**")
+        
+        st.markdown('<div style="display:flex;align-items:center;margin-bottom:5px;"><div style="width:12px;height:12px;background-color:green;margin-right:5px;"></div> &lt; $300k</div>', unsafe_allow_html=True)
+        st.markdown('<div style="display:flex;align-items:center;margin-bottom:5px;"><div style="width:12px;height:12px;background-color:blue;margin-right:5px;"></div> $300k - $600k</div>', unsafe_allow_html=True)
+        st.markdown('<div style="display:flex;align-items:center;margin-bottom:5px;"><div style="width:12px;height:12px;background-color:orange;margin-right:5px;"></div> $600k - $1M</div>', unsafe_allow_html=True)
+        st.markdown('<div style="display:flex;align-items:center;margin-bottom:5px;"><div style="width:12px;height:12px;background-color:red;margin-right:5px;"></div> &gt; $1M</div>', unsafe_allow_html=True)
     
     # Map the radio button selection to the parameter values for create_property_map
     view_type_map = {
@@ -649,6 +662,9 @@ def display_property_map(properties_df):
         
         # Display the map
         folium_static(property_map)
+        
+        # Map optimization note
+        st.info("Note: For better performance, the map displays up to 50 properties. If you have more properties, consider using the filters to focus on specific areas or price ranges.")
     else:
         st.warning("Could not create property map.")
 
